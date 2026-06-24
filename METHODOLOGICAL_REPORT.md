@@ -56,6 +56,16 @@ We evaluated the stability of our cohort estimates against four varying specific
 4. **Non-Parametric Age**: Treating 5-year age categories as factors, placing no functional restrictions on the life-course shape.
 * **Findings**: The comparison plot (`[Plots/age_specification_robustness.png](Plots/age_specification_robustness.png)`) reveals that the cohort random intercepts are virtually identical under the cubic and non-parametric age controls. Even under linear or quadratic assumptions, the elevated pattern of the 1930–1950 generation remains highly distinct. This proves that the cohort effects are robust to functional life-course specifications.
 
+### C. Advanced Methodological Robustness Checks (Period, Weights, Education, and Life-Course Interactions)
+
+To address more specific and advanced methodological critiques, we subjected our focal outcome `craft_fair` (Art Festivals) to four additional, highly rigorous robustness checks, comparing estimated cohort random intercepts under various specifications:
+
+1. **Period Control Robustness (Fixed vs. Random Effects)**: We fit a model where Survey Year (Period) is modeled as a cross-classified random intercept `(1 | year_factor)` in a full CCREM framework rather than as fixed year dummy variables. The resulting cohort random intercepts are virtually identical (saved in `[Plots/period_control_robustness.png](Plots/period_control_robustness.png)`), showing that the cohort effects are invariant to how period time-slices are modeled.
+2. **Survey Weighting Robustness (Weighted vs. Unweighted)**: We compare our baseline model with one fit using normalized survey weights (`weight_normalized`). The cohort curves (saved in `[Plots/weight_robustness.png](Plots/weight_robustness.png)`) align perfectly, demonstrating that survey weighting adjustments do not distort or drive our identified generational trends.
+3. **Education Control Coding (Binary vs. 6-Category)**: To rule out residual confounding from our binary college indicator, we re-fit models controlling for the full 6-category education classification (ranging from less than 9th grade to advanced degrees) as a factor. The cohort intercepts are highly stable (saved in `[Plots/education_coding_robustness.png](Plots/education_coding_robustness.png)`), proving that our findings are not a spurious proxy for finer gradations of educational expansion.
+4. **Demographic-by-Age Life-Course Interactions**: We fit a model where the effect of age (cubic polynomials) is allowed to interact with gender and college experience (i.e. `age*college` and `age*woman`). The cohort random intercepts are remarkably stable (saved in `[Plots/demographic_interaction_robustness.png](Plots/demographic_interaction_robustness.png)`), demonstrating that the "omnivorous generation" trend persists independently of potential group differences in life-course aging trajectories.
+
+
 ---
 
 ## 3. Compositional Stratification: The "Rising Tide" Argument
@@ -99,6 +109,10 @@ All active, reproducible assets are fully organized and committed to the Git rep
   * `[omnivorous-generation-analysis.qmd](omnivorous-generation-analysis.qmd)`: Self-contained Quarto code block containing data preprocessing, HAPC model fitting, robustness plots, stratified models.
   * `[omnivorous-generation-analysis.html](omnivorous-generation-analysis.html)`: Compiled HTML report displaying code, explanations, and embedded visualizations.
 * **[Plots/](Plots/) Folder (PNG Visualizations)**:
+  * `[Plots/period_control_robustness.png](Plots/period_control_robustness.png)`: Robustness comparing fixed vs. random effects for survey year (Period).
+  * `[Plots/weight_robustness.png](Plots/weight_robustness.png)`: Robustness comparing weighted vs. unweighted models.
+  * `[Plots/education_coding_robustness.png](Plots/education_coding_robustness.png)`: Robustness comparing binary vs. 6-category education controls.
+  * `[Plots/demographic_interaction_robustness.png](Plots/demographic_interaction_robustness.png)`: Robustness allowing age-by-demographic (college, woman) interactions.
   * `[Plots/bivariate_apc_trends.png](Plots/bivariate_apc_trends.png)`: Standardized descriptive mean trends (Figure 1).
   * `[Plots/cohort_trends_by_survey_year.png](Plots/cohort_trends_by_survey_year.png)`: Longitudinal cohort trends by survey years (Figure 2).
   * `[Plots/cohort_bandwidth_robustness.png](Plots/cohort_bandwidth_robustness.png)`: Bandwidth checks (2, 4, 6, 8-year windows).
