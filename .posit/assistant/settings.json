@@ -1,0 +1,10 @@
+{
+  "permission": {
+    "bash": {
+      "mkdir *": "allow",
+      "echo *": "allow",
+      "quarto render *": "allow",
+      "ls *": "allow"
+    }
+  }
+}
