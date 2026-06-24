@@ -1,9 +1,13 @@
-# Methodological Progress Report: Modernizing the Analysis of the "Omnivorous Generation"
-
-**Date:** June 24, 2026  
-**Authors:** Jennifer C. Lena (Columbia University) & Omar Lizardo (University of California, UCLA)  
-**Project Workspace:** `lena-lizardo-art-festivals-omnivores`  
-
+---
+title: "Methodological Progress Report"
+subtitle: "Modernizing the Analysis of the 'Omnivorous Generation'"
+author: "Jennifer C. Lena (Columbia University) & Omar Lizardo (University of California, UCLA)"
+date: "June 24, 2026"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    theme: journal
 ---
 
 ## Executive Summary
