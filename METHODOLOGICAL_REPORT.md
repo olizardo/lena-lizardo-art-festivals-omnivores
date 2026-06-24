@@ -14,7 +14,7 @@ format:
 
 This report documents the comprehensive modernization of the analytical pipeline for the project **"The Making of an 'Omnivorous Generation'"**. The project was previously suspended due to reviewer skepticism (especially from Reviewer A and Reviewer C) concerning the statistical identification, robustness, and interpretation of cohort-specific imprinting effects. 
 
-By shifting the codebase from a fragmented Stata-based structure to a single, fully reproducible **R and Quarto Markdown** environment, we have systematically addressed every reviewer concern. This document details the newly added methodological rigor, including **Hierarchical Age-Period-Cohort (HAPC)** specification robustness tests, **sociodemographic stratification checks**, and a customized, numerically stable implementation of the **Age-Period-Cohort-Interaction (APCI)** model.
+By shifting the codebase from a fragmented Stata-based structure to a single, fully reproducible **R and Quarto Markdown** environment, we have systematically addressed every reviewer concern. This document details the newly added methodological rigor, including **Hierarchical Age-Period-Cohort (HAPC)** specification robustness tests, **sociodemographic stratification checks**.
 
 ---
 
@@ -78,29 +78,7 @@ To ensure that generational trends are stable across racial sub-demographics, we
 
 ---
 
-## 4. Advanced Methodological Addition: The APCI Model
-
-The holy grail of modern cohort analysis is the **Age-Period-Cohort-Interaction (APCI)** model developed by Luo and Hodges (2020). Standard APC models face perfect linear collinearity: 
-$$\text{Cohort} = \text{Period} - \text{Age}$$
-The APCI model bypasses this identification problem by defining cohort effects not as additive linear parameters, but as **deviations (interactions) from the additive age and period main effects**.
-
-### Overcoming CRAN Package Software Limitations
-When we applied the off-the-shelf R package `APCI` to the SPPA cumulative dataset, the function crashed with a standard matrix indexing error (`logical subscript too long`). In investigating the package's source code, we uncovered a **major design flaw in the APCI package**: 
-* The package assumes a perfectly balanced, dense panel where no regression parameters are dropped due to collinearity.
-* However, in repeated cross-sections with missing survey years (like the SPPA, which was only conducted in 1982, 1985, 1992, 2002, 2008, and 2012), many age-by-period cells are empty or extremely sparse. 
-* This leads to complete separation (e.g., in late senior categories above age 80, where all respondents in a specific cell had zero participation), causing R to drop those coefficients (returning `NA`).
-* The package's internal functions (`maineffect` and `cohortdeviation`) subsetted matrices using a logical vector of length `length(model$coefficients)` against `summary(model)$coef`. Since dropped variables are removed from the summary table but retained in the coefficients vector, the mismatched vector lengths threw a subscript error and halted execution.
-
-### Engineering the `apci_robust()` Solver
-To bypass this package bug, we designed and implemented a **custom, robust APCI solver** directly in our Quarto file:
-1. **Targeted Data Filtering**: We filtered out sparse, extreme senior categories above age 80 (`agecat <= 20`). This resolved the perfect separation issue, allowing the GLM to converge stably.
-2. **Reconstructing Covariance Matrices**: We rewrote the `maineffect_robust()` and `cohortdeviation_robust()` functions. Instead of assuming perfectly aligned vectors, our functions dynamically detect `NA` coefficients, match terms by character string names, and reconstruct a full-dimension variance-covariance matrix (inserting `0` for collinear/dropped variables). This mathematical adaptation preserves the exact matrix projection $T \times \text{iavcov} \times T^T$ while preventing subscript mismatch crashes.
-
-The robust APCI model ran flawlessly and estimated formal, constraint-free cohort deviations with 95% confidence intervals.
-
----
-
-## 5. Summary of Main Empirical Results
+## 4. Summary of Main Empirical Results
 
 Our modernized analytical pipeline has produced robust, clear empirical support for the paper's original thesis:
 
@@ -110,16 +88,15 @@ Our modernized analytical pipeline has produced robust, clear empirical support 
 | **HAPC (All 8 Outcomes)** (Table 1) | Cohort random intercepts show significant variation. The 1930–1950 birth cohorts have positive, elevated random effects across multiple genres (Art Museums, Festivals, Musicals). | $\sigma^2_{\text{cohort}} > 0$ ($p < 0.001$ via Wald tests) | Confirms that even after controlling for life-course age, survey period, education, race, and gender, the "omnivorous generation" remains distinct. |
 | **Specification Sensitivity Checks** | Cohort random intercept curves remain stable across 2, 4, 6, and 8-year windows, and cubic/non-parametric age controls. | Consistent peaks across all models | Addresses Reviewer A's skepticism; proves cohort findings are not artifacts of statistical tuning or modeling constraints. |
 | **Sociodemographic Stratifications** | 1930–1950 peak is parallel within educational (College vs. No College) and racial (White vs. Black) subgroups. | Parallel significant peaks ($p < 0.05$) | Directly addresses the "rising tide" critique; proves cohort effects are not compositional proxies for the expansion of higher education. |
-| **Robust APCI Model** (Luo & Hodges 2020) | Formal cohort deviations (constraint-free) show a statistically significant positive deviation for cohorts born 1930–1950, peaking in the 1940s. | $p < 0.01$ (Wald tests on cohort deviations) | Directly solves the APC identification problem, providing the strongest possible mathematical evidence of historical imprinting. |
 
 ---
 
-## 6. Directory Map of Reproducible Assets
+## 5. Directory Map of Reproducible Assets
 
 All active, reproducible assets are fully organized and committed to the Git repository. 
 
 * **Analytical Core**:
-  * `[omnivorous-generation-analysis.qmd](omnivorous-generation-analysis.qmd)`: Self-contained Quarto code block containing data preprocessing, HAPC model fitting, robustness plots, stratified models, and the robust APCI solver.
+  * `[omnivorous-generation-analysis.qmd](omnivorous-generation-analysis.qmd)`: Self-contained Quarto code block containing data preprocessing, HAPC model fitting, robustness plots, stratified models.
   * `[omnivorous-generation-analysis.html](omnivorous-generation-analysis.html)`: Compiled HTML report displaying code, explanations, and embedded visualizations.
 * **[Plots/](Plots/) Folder (PNG Visualizations)**:
   * `[Plots/bivariate_apc_trends.png](Plots/bivariate_apc_trends.png)`: Standardized descriptive mean trends (Figure 1).
@@ -128,7 +105,6 @@ All active, reproducible assets are fully organized and committed to the Git rep
   * `[Plots/age_specification_robustness.png](Plots/age_specification_robustness.png)`: Age checks (Linear, Quadratic, Cubic, Factorial controls).
   * `[Plots/education_stratified_effects.png](Plots/education_stratified_effects.png)`: HAPC stratified by College Graduate status.
   * `[Plots/race_stratified_effects.png](Plots/race_stratified_effects.png)`: HAPC stratified by Race.
-  * `[Plots/apci_cohort_deviations.png](Plots/apci_cohort_deviations.png)`: Joint-interaction APCI deviations with 95% confidence intervals.
+
 * **[Tabs/](Tabs/) Folder (HTML Tables)**:
   * `[Tabs/hapc_table.html](Tabs/hapc_table.html)`: Clean regression table compiling HAPC models for all 8 outcomes.
-  * `[Tabs/apci_cohort_deviations.html](Tabs/apci_cohort_deviations.html)`: Styled table summarizing robust APCI coefficients, standard errors, and p-values.
