@@ -6,6 +6,9 @@
       "quarto render *": "allow",
       "ls *": "allow",
       "git status *": "allow"
+    },
+    "edit": {
+      "*.md": "allow"
     }
   }
 }
