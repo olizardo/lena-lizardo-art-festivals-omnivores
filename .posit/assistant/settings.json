@@ -4,7 +4,8 @@
       "mkdir *": "allow",
       "echo *": "allow",
       "quarto render *": "allow",
-      "ls *": "allow"
+      "ls *": "allow",
+      "git status *": "allow"
     }
   }
 }
