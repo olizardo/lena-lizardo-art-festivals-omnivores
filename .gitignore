@@ -1,0 +1,30 @@
+# R-specific files
+.Rhistory
+.RData
+.RDataTmp
+.Ruserdata
+.Rproj.user/
+.Rapp.history
+*.Rhistory
+*.RData
+*.RDataTmp
+
+# Quarto output and cache
+.quarto/
+_site/
+_book/
+_freeze/
+*.html
+
+# MS Office temp files
+~$*.docx
+~$*.doc
+~$*.xlsx
+
+# Excel and RTF outputs (generated artifacts)
+*.xlsx
+*.rtf
+
+# OS generated files
+.DS_Store
+Thumbs.db
