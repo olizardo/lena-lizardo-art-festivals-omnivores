@@ -17,6 +17,7 @@ _freeze/
 *_cache/
 *_files/
 *.html
+!Tabs/*.html
 
 # MS Office temp files
 ~$*.docx
