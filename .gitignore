@@ -31,3 +31,4 @@ _freeze/
 # OS generated files
 .DS_Store
 Thumbs.db
+.posit/
