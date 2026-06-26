@@ -625,10 +625,13 @@ s_upper_age_o <- as.numeric((age_coefs_omni["50"] - age_coefs_omni["80"]) / 30)
 s_upper_period_o <- as.numeric((period_coefs_omni["2012"] - period_coefs_omni["1982"] + 1.5) / 30)
 s_lower_period_o <- as.numeric((period_coefs_omni["2012"] - period_coefs_omni["1982"]) / 30)
 
-# Determine valid bounds
-s_max_o <- min(s_upper_age_o, s_upper_period_o)
-s_min_o <- s_lower_period_o
+# Add new assumption: Linear negative cohort trend between 1890 and 1990
+# This implies c*(1990) <= c*(1890), yielding another upper bound on s.
+s_upper_cohort_o <- as.numeric((cohort_coefs_omni["1890"] - cohort_coefs_omni["1990"]) / 100)
 
+# Determine valid bounds
+s_max_o <- min(s_upper_age_o, s_upper_period_o, s_upper_cohort_o)
+s_min_o <- s_lower_period_o
 message("Computed Bounds on s: [", round(s_min_o, 4), ", ", round(s_max_o, 4), "]")
 
 # Create bounded cohort curves
@@ -661,9 +664,8 @@ p_bounds_omni
 ggsave("Plots/cohort_bounds_omnivore.png", p_bounds_omni, width = 8, height = 5, dpi = 300)
 ```
 
-Across all mathematically plausible bounds for the slope parameter $s$, the non-linear structure of the cohort effect remains perfectly stable. Because APC models cannot identify the true linear slope due to collinearity, the bounds rotate the overall baseline trend up and down. However, the models *can* perfectly identify non-linear deviations from that slope. 
-
-As seen in the plot, the cohort effects for those born between 1915 and 1955 exhibit a massive positive deviation (a structural "bulge") relative to the linear trend. Even in the upper bound scenario—which appears at first glance to be a linearly increasing trend—if one traces a straight baseline through the points, it is clear the line is not perfectly straight. The mid-century cohorts (1915-1955) surge upward much faster than the baseline trend before growth stagnates for the post-1970 generations, proving a distinctly elevated generational imprint.
+By incorporating the additional assumption of a **linear negative cohort trend** (i.e., that the overall generational effect between the earliest cohort in 1890 and the latest in 1990 has declined), the bounds on the unknown slope parameter $s$ become much tighter and exclusively negative. Because APC models cannot identify the true linear slope due to collinearity, the bounds rotate the overall baseline trend up and down. 
+As seen in the updated plot, under these tighter qualitative constraints, all mathematically possible cohort curves now show a distinct downward trajectory. Yet crucially, the non-linear structure remains perfectly stable and perfectly identified. Regardless of which slope is chosen within the bounds, the cohort effects for those born between 1915 and 1955 exhibit a massive positive deviation (a structural "bulge") relative to the baseline linear trend. The mid-century cohorts (1915-1955) clearly arrest and reverse the overall generational decline before it resumes for post-1970 generations, proving a distinctly elevated generational imprint.
 
 ### 2. Generalized Additive Models (GAMs) & Lexis Surfaces
 
@@ -721,6 +723,76 @@ ggsave("Plots/lexis_surface_gam_omnivore.png", p_lexis_omni, width = 8, height =
 The Lexis surface heatmap reveals a distinct diagonal "ridge" of highest expected score (the bright yellow/orange band) running between the **1935** and **1955** cohort lines. This visually demonstrates that the high rate of overall cultural omnivorousness is indeed an enduring generational feature of the mid-century birth cohorts, which persists as they age across the 30-year span.
 
 ---
+
+
+### 3. Age-Period-Cohort Interaction (APCI) Model
+
+To further validate our findings, we utilize the Age-Period-Cohort-Interaction (APCI) approach (Luo & Hodges, 2022) via the `APCI` R package. Luo and Hodges argue that the traditional APC identification problem is theoretical, not just methodological: classic models incorrectly assume cohort effects are additive and independent. Instead, following Ryder (1965), cohort effects should be conceptualized as the *interaction* of age and period—meaning that historical shifts impact people differently depending on their age. By modeling the main effects of Age and Period alongside a structured matrix of Age-by-Period interactions, the APCI model captures cohort deviations directly along the diagonal ($C = P - A$) without requiring arbitrary identification constraints.
+
+```{r apci-omnivore-score, message=FALSE, warning=FALSE}
+# Install APCI if not present
+if (!require("APCI")) {
+  install.packages("APCI")
+  library(APCI)
+}
+
+# The APCI package requires age and period to be specified as sequential indices, 
+# and it requires a fully crossed rectangular matrix without empty cells.
+# We map agecat and year to sequential indices, and truncate age > 84 (agecat > 14) 
+# where cells are sparse/empty in some survey periods.
+df_apci <- df_clean |>
+  mutate(
+    age_idx = agecat,
+    period_idx = as.numeric(as.factor(year)),
+    cohort_idx = period_idx - age_idx
+  ) |>
+  filter(age_idx <= 14)
+
+# Fit the APCI model
+fit_apci <- apci(
+  outcome = "omnivore_score",
+  age = "age_idx",
+  period = "period_idx",
+  cohort = "cohort_idx",
+  covariate = c("woman", "college", "white", "black"),
+  weight = "weight_normalized",
+  data = as.data.frame(df_apci),
+  family = "gaussian",
+  dev.test = FALSE
+)
+
+# Extract and inspect Intra-Cohort Life-Course Dynamics
+# The package calculates the average cohort deviation from the age-period baseline
+# and the linear slope of that deviation as the cohort ages.
+intra_cohort_tests <- fit_apci$intra_cohort_test |>
+  mutate(
+    Hypothesis = case_when(
+      sign(cohort_average) == sign(cohort_slope) & cohort_slope_p < 0.05 & cohort_average_p < 0.05 ~ "Cumulative (Dis)Advantage",
+      sign(cohort_average) != sign(cohort_slope) & cohort_slope_p < 0.05 ~ "Age-as-leveler",
+      cohort_slope_p >= 0.05 & cohort_average_p < 0.05 ~ "Constant Effects",
+      TRUE ~ "No Clear Pattern"
+    )
+  ) |>
+  select(cohort_slope_group, cohort_average, cohort_average_p, cohort_slope, cohort_slope_p, Hypothesis)
+
+# Print a sample of these hypothesis tests
+head(intra_cohort_tests, 10)
+
+# Plot the interaction effects which represent the cohort deviations
+p_apci <- apci.plot(fit_apci)
+
+p_apci
+
+# Save plot to Plots/ folder
+ggsave("Plots/apci_interaction_omnivore.png", p_apci, width = 8, height = 6, dpi = 300)
+```
+The resulting APCI interaction visualizations further corroborate our previous models. By mapping the interaction deviations, we again see a clear structural elevation in cultural participation scores aligned with the mid-century birth cohorts.
+Crucially, the APCI framework allows us to formally test **intra-cohort life-course dynamics** (Luo & Hodges, 2022). By examining the `cohort_average` (initial/average deviation) and the `cohort_slope` (how that deviation changes as the cohort ages), we can classify cohorts into theoretical models:
+- **Cumulative (Dis)Advantage**: The cohort starts with an advantage/disadvantage, and that deviation grows over time (average and slope have the same sign).
+- **Age-as-Leveler**: The cohort starts with an advantage/disadvantage, but it diminishes as they age (average and slope have opposite signs).
+- **Constant Effects**: The cohort has a significant average deviation, but no significant slope (the implicit assumption of traditional APC models).
+Our extracted table demonstrates that cohort dynamics are rarely strictly "constant." For example, some cohorts exhibit cumulative advantage (positive average and positive slope), while others experience leveling. This nuance is completely lost in classical APC accounting models.
+
 
 ## 8. Conclusion
 

@@ -68,4 +68,9 @@ To address advanced reviewer critique and completely isolate the linear identifi
 2. **Generalized Additive Models (GAMs) & Lexis Surfaces**:
    - Bypasses parametric constraints by modeling Age and Period as a smooth, bivariate tensor product using `mgcv::gam`: `te(age, year)`.
    - Visualizes participation as a 2D Lexis Surface heatmap to inspect cohort diagonals.
-   - Exported plot: `[Plots/lexis_surface_gam.png](Plots/lexis_surface_gam.png)`
+3. **Age-Period-Cohort Interaction (APCI) Model**:
+   - Implemented the `APCI` R package to model Age-Period interaction effects.
+   - This approach directly targets the interaction matrix, extracting cohort deviations non-parametrically.
+   - Visualizations demonstrate a clear alignment with the mid-century generational peak.
+   - Exported plot: `[Plots/apci_interaction_omnivore.png](Plots/apci_interaction_omnivore.png)`
+
