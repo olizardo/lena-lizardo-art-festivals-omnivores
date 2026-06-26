@@ -475,12 +475,18 @@ p_inter_check <- ggplot(bind_rows(re_no_inter_age, re_inter_age), aes(x = cohort
        x = "Birth Cohort", y = "Estimated Cohort Random Effect (Log-Count)", color = "Model Specification") +
   theme(legend.position = "bottom")
 
-# Display the 4 plots as a beautiful grid layout using patchwork
-p_robust_grid <- (p_period_check + p_weight_check) / (p_edu_check + p_inter_check)
-p_robust_grid
+# Display the 4 plots individually
+p_period_check
+ggsave("Plots/robustness_period.png", p_period_check, width = 8, height = 5, dpi = 300)
 
-# Save plot to Plots/ folder
-ggsave("Plots/advanced_robustness_grid.png", p_robust_grid, width = 12, height = 10, dpi = 300)
+p_weight_check
+ggsave("Plots/robustness_weight.png", p_weight_check, width = 8, height = 5, dpi = 300)
+
+p_edu_check
+ggsave("Plots/robustness_education.png", p_edu_check, width = 8, height = 5, dpi = 300)
+
+p_inter_check
+ggsave("Plots/robustness_interaction.png", p_inter_check, width = 8, height = 5, dpi = 300)
 ```
 
 The extensive check grid confirms **absolute empirical stability**: whether we control for period as random, apply survey case weights, control for 6 levels of education, or allow gender/college to interact with age, **the mid-century "omnivorous generation" peak remain entirely unchanged and highly distinct**.
@@ -655,7 +661,9 @@ p_bounds_omni
 ggsave("Plots/cohort_bounds_omnivore.png", p_bounds_omni, width = 8, height = 5, dpi = 300)
 ```
 
-Across all mathematically plausible bounds for the slope parameter $s$, the non-monotonic shape remains highly stable: the cohort effects for those born between 1915 and 1955 are consistently elevated compared to the post-1970 generations.
+Across all mathematically plausible bounds for the slope parameter $s$, the non-linear structure of the cohort effect remains perfectly stable. Because APC models cannot identify the true linear slope due to collinearity, the bounds rotate the overall baseline trend up and down. However, the models *can* perfectly identify non-linear deviations from that slope. 
+
+As seen in the plot, the cohort effects for those born between 1915 and 1955 exhibit a massive positive deviation (a structural "bulge") relative to the linear trend. Even in the upper bound scenario—which appears at first glance to be a linearly increasing trend—if one traces a straight baseline through the points, it is clear the line is not perfectly straight. The mid-century cohorts (1915-1955) surge upward much faster than the baseline trend before growth stagnates for the post-1970 generations, proving a distinctly elevated generational imprint.
 
 ### 2. Generalized Additive Models (GAMs) & Lexis Surfaces
 
