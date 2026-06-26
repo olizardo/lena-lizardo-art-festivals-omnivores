@@ -116,12 +116,14 @@ df_clean <- df_clean |>
     cohort4 = get_cohort_bins(cohort, 4),
     cohort5 = get_cohort_bins(cohort, 5),
     cohort6 = get_cohort_bins(cohort, 6),
-    cohort8 = get_cohort_bins(cohort, 8)
+    cohort8 = get_cohort_bins(cohort, 8),
+    # Calculate aggregate Omnivore Score (0-8 activities)
+    omnivore_score = rowSums(across(all_of(outcomes)), na.rm = TRUE)
   )
 
 # Preview clean dataset
 df_clean |> 
-  select(year, age, cohort, cohort4, cohort5, craft_fair, college, white) |> 
+  select(year, age, cohort, cohort4, cohort5, omnivore_score, college, white) |> 
   head()
 ```
 
@@ -131,99 +133,84 @@ df_clean |>
 
 ### Figure 1: Standardized Bivariate Trends by Age, Period, and Cohort
 
-To see the raw trends across the three temporal dimensions, we calculate standardized participation rates (centered at 0 with standard deviation of 1) across Age Categories, Survey Years, and Birth Cohorts.
+To see the raw trends across the three temporal dimensions, we calculate average cultural omnivore scores across Age Categories, Survey Years, and Birth Cohorts.
 
 ```{r figure1-prep, message=FALSE, warning=FALSE}
-# Create standardized outcomes for descriptive plotting
-df_std <- df_clean |>
-  mutate(across(all_of(outcomes), ~ scale(.)[,1], .names = "std_{.col}"))
-
 # 1. Bivariate by Age Category
-age_trends <- df_std |>
+age_trends <- df_clean |>
   group_by(agecat) |>
-  summarise(across(starts_with("std_"), ~ mean(., na.rm = TRUE))) |>
-  pivot_longer(cols = starts_with("std_"), names_to = "Activity", values_to = "Value") |>
-  mutate(Activity = str_replace(Activity, "std_", "") |> str_to_title())
+  summarise(Value = mean(omnivore_score, na.rm = TRUE))
 
 # 2. Bivariate by Survey Year
-year_trends <- df_std |>
+year_trends <- df_clean |>
   group_by(year) |>
-  summarise(across(starts_with("std_"), ~ mean(., na.rm = TRUE))) |>
-  pivot_longer(cols = starts_with("std_"), names_to = "Activity", values_to = "Value") |>
-  mutate(Activity = str_replace(Activity, "std_", "") |> str_to_title())
+  summarise(Value = mean(omnivore_score, na.rm = TRUE))
 
 # 3. Bivariate by Cohort (5-Year)
-cohort_trends <- df_std |>
+cohort_trends <- df_clean |>
   filter(cohort5 >= 1890 & cohort5 <= 1990) |>
   group_by(cohort5) |>
-  summarise(across(starts_with("std_"), ~ mean(., na.rm = TRUE))) |>
-  pivot_longer(cols = starts_with("std_"), names_to = "Activity", values_to = "Value") |>
-  mutate(Activity = str_replace(Activity, "std_", "") |> str_to_title())
+  summarise(Value = mean(omnivore_score, na.rm = TRUE))
 ```
 
 ```{r figure1-plot, fig.width=12, fig.height=5}
-p_age <- ggplot(age_trends, aes(x = agecat, y = Value, color = Activity, group = Activity)) +
+p_age <- ggplot(age_trends, aes(x = agecat, y = Value)) +
   geom_line(linewidth = 0.8) +
+  geom_point() +
   theme_minimal() +
-  labs(title = "By Age Category", x = "5-Year Age Category (1-17)", y = "Standardized Mean") +
-  theme(legend.position = "none")
+  labs(title = "By Age Category", x = "5-Year Age Category (1-17)", y = "Mean Omnivore Score")
 
-p_year <- ggplot(year_trends, aes(x = year, y = Value, color = Activity, group = Activity)) +
+p_year <- ggplot(year_trends, aes(x = year, y = Value)) +
   geom_line(linewidth = 0.8) +
+  geom_point() +
   theme_minimal() +
-  labs(title = "By Survey Year", x = "Survey Year", y = "") +
-  theme(legend.position = "none")
+  labs(title = "By Survey Year", x = "Survey Year", y = "")
 
-p_cohort <- ggplot(cohort_trends, aes(x = cohort5, y = Value, color = Activity, group = Activity)) +
+p_cohort <- ggplot(cohort_trends, aes(x = cohort5, y = Value)) +
   geom_line(linewidth = 0.8) +
+  geom_point() +
   theme_minimal() +
-  labs(title = "By Birth Cohort (5-Year)", x = "Cohort Year", y = "") +
-  theme(legend.position = "bottom")
+  labs(title = "By Birth Cohort (5-Year)", x = "Cohort Year", y = "")
 
 library(patchwork)
-p_age + p_year + p_cohort + plot_layout(ncol = 3, widths = c(1, 1, 1.2))
+p_fig1 <- p_age + p_year + p_cohort + plot_layout(ncol = 3, widths = c(1, 1, 1.2))
+p_fig1
+
+# Save plot to Plots/ folder
+ggsave("Plots/bivariate_apc_trends.png", p_fig1, width = 12, height = 5, dpi = 300)
 ```
 
 ### Figure 2: Bivariate Cohort Trends by Selected Survey Years
 
-To check for stable generational cohorts, we plot participation in the outcomes across cohorts, stratified by three key survey years (1982, 2002, 2012).
+To check for stable generational cohorts, we plot the average Omnivore Score across cohorts, stratified by three key survey years (1982, 2002, 2012).
 
-```{r figure2-plot, fig.width=12, fig.height=8, warning=FALSE, message=FALSE}
+```{r figure2-plot, fig.width=8, fig.height=5, warning=FALSE, message=FALSE}
 df_fig2 <- df_clean |>
   filter(year %in% c(1982, 2002, 2012)) |>
   filter(cohort5 >= 1900 & cohort5 <= 1990) |>
   group_by(cohort5, year) |>
-  summarise(across(all_of(outcomes), ~ mean(., na.rm = TRUE))) |>
-  pivot_longer(cols = all_of(outcomes), names_to = "Activity", values_to = "Participation") |>
-  mutate(
-    Activity = recode(Activity,
-      "park" = "Historic Monument",
-      "craft_fair" = "Art Festival",
-      "artmuseum" = "Art Museum",
-      "musical" = "Musicals",
-      "classical" = "Symphony",
-      "jazz" = "Jazz",
-      "ballet" = "Ballet",
-      "opera" = "Opera"
-    ),
-    year = as.factor(year)
-  )
+  summarise(Participation = mean(omnivore_score, na.rm = TRUE), .groups = "drop") |>
+  mutate(year = as.factor(year))
 
-ggplot(df_fig2, aes(x = cohort5, y = Participation, color = year, group = year)) +
+p_fig2 <- ggplot(df_fig2, aes(x = cohort5, y = Participation, color = year, group = year)) +
   geom_line(linewidth = 0.8) +
   geom_point(size = 1.2) +
-  facet_wrap(~ Activity, scales = "free_y", ncol = 4) +
   scale_color_brewer(palette = "Set1") +
   theme_minimal() +
-  labs(x = "5-Year Birth Cohort", y = "Participation Rate", color = "Survey Year") +
+  labs(x = "5-Year Birth Cohort", y = "Mean Omnivore Score", color = "Survey Year") +
   theme(legend.position = "bottom", axis.text.x = element_text(angle = 45, hjust = 1))
+
+p_fig2
+
+# Save plot to Plots/ folder
+ggsave("Plots/cohort_trends_by_survey_year.png", p_fig2, width = 8, height = 5, dpi = 300)
 ```
 
 ---
 
 ## 4. Hierarchical Age-Period-Cohort Models (HAPC)
 
-The standard HAPC / CCREM approach models individual participation as a function of continuous age (quadratic/cubic polynomials), demographic controls, and survey-year fixed effects, while nesting cohorts as a random intercept. To fit these models efficiently on over 70,000 observations, we use the Laplace approximation shortcut `nAGQ = 0` which achieves exceptionally fast and numerically stable results in `lme4`.
+The standard HAPC / CCREM approach models individual participation as a function of continuous age (quadratic/cubic polynomials), demographic controls, and survey-year fixed effects, while nesting cohorts as a random intercept. To fit these models efficiently on over 70,000 observations, we use the Laplace approximation shortcut `nAGQ = 0` which achieves exceptionally fast and numerically stable results in `lme4`. Since our outcome is the additive Omnivore Score (a count from 0 to 8), we model this outcome using a Poisson distribution with a log link function.
 
 ```{r hapc-models}
 # Convert year to factor for fixed effects
@@ -232,24 +219,19 @@ df_clean$year_factor <- as.factor(df_clean$year)
 # Initialize list to store models
 hapc_models <- list()
 
-# Fit models for all 8 outcomes using lme4::glmer
-for (outcome in outcomes) {
-  message("Fitting HAPC model for: ", outcome)
-  formula_str <- paste0(
-    outcome, " ~ age + age2 + age3 + woman + college + white + black + year_factor + (1 | cohort4)"
-  )
-  hapc_models[[outcome]] <- glmer(
-    as.formula(formula_str),
-    family = binomial(link = "logit"),
-    data = df_clean,
-    nAGQ = 0 # Optimized Laplace approximation for high speed and robustness
-  )
-}
+# Fit HAPC model for the aggregate Omnivore Score using Poisson glmer
+message("Fitting HAPC model for: omnivore_score")
+hapc_models[["Cultural Omnivore Score"]] <- glmer(
+  omnivore_score ~ age + age2 + age3 + woman + college + white + black + year_factor + (1 | cohort4),
+  family = poisson(link = "log"),
+  data = df_clean,
+  nAGQ = 0 # Optimized Laplace approximation for high speed and robustness
+)
 ```
 
 ### HAPC Regression Table
 
-Using the `modelsummary` package, we compile the results of the eight hierarchical logistic regression models.
+Using the `modelsummary` package, we compile the results of our hierarchical Poisson regression model.
 
 ```{r hapc-table, warning=FALSE}
 # Create a clean summary table of our HAPC models
@@ -274,6 +256,29 @@ modelsummary(
   gof_map = c("nobs", "aic", "bic"),
   output = "markdown"
 )
+
+# Export the regression table as HTML
+modelsummary(
+  hapc_models,
+  stars = TRUE,
+  coef_rename = c(
+    "(Intercept)" = "Constant",
+    "age" = "Age",
+    "age2" = "Age-Squared",
+    "age3" = "Age-Cubed",
+    "woman" = "Woman",
+    "college" = "College Graduate",
+    "white" = "White",
+    "black" = "Black",
+    "year_factor1985" = "Year: 1985",
+    "year_factor1992" = "Year: 1992",
+    "year_factor2002" = "Year: 2002",
+    "year_factor2008" = "Year: 2008",
+    "year_factor2012" = "Year: 2012"
+  ),
+  gof_map = c("nobs", "aic", "bic"),
+  output = "Tabs/hapc_table.html"
+)
 ```
 
 ---
@@ -284,7 +289,7 @@ Reviewer A expressed skepticism that cohort findings might be highly sensitive t
 
 ### Sensitivity to Cohort Window Widths (2, 4, 6, and 8-Year Windows)
 
-We fit HAPC models for our primary outcome `craft_fair` (Art Festivals) across varying cohort window definitions and compare the resulting cohort random effects.
+We fit HAPC models for our primary outcome `omnivore_score` across varying cohort window definitions and compare the resulting cohort random effects.
 
 ```{r cohort-window-robustness}
 cohort_specs <- c("cohort2", "cohort4", "cohort6", "cohort8")
@@ -292,9 +297,9 @@ window_effects <- list()
 
 for (spec in cohort_specs) {
   formula_str <- paste0(
-    "craft_fair ~ age + age2 + age3 + woman + college + white + black + year_factor + (1 | ", spec, ")"
+    "omnivore_score ~ age + age2 + age3 + woman + college + white + black + year_factor + (1 | ", spec, ")"
   )
-  mod <- glmer(as.formula(formula_str), family = binomial, data = df_clean, nAGQ = 0)
+  mod <- glmer(as.formula(formula_str), family = poisson(link = "log"), data = df_clean, nAGQ = 0)
   
   # Extract random intercepts
   re <- ranef(mod)[[spec]]
@@ -313,40 +318,45 @@ for (spec in cohort_specs) {
 
 df_window_robustness <- bind_rows(window_effects)
 
-ggplot(df_window_robustness, aes(x = cohort_val, y = re_effect, color = spec, linetype = spec)) +
+p_bandwidth <- ggplot(df_window_robustness, aes(x = cohort_val, y = re_effect, color = spec, linetype = spec)) +
   geom_line(linewidth = 1) +
   geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.5) +
   theme_minimal() +
   labs(
-    title = "Cohort Random Effects across Bandwidths (Art Festivals/Craft Fairs)",
+    title = "Cohort Random Effects across Bandwidths (Omnivore Score)",
     x = "Birth Cohort",
-    y = "Estimated Cohort Random Effect (Log-Odds)",
+    y = "Estimated Cohort Random Effect (Log-Count)",
     color = "Cohort Window Size",
     linetype = "Cohort Window Size"
   ) +
   theme(legend.position = "bottom")
+
+p_bandwidth
+
+# Save plot to Plots/ folder
+ggsave("Plots/cohort_bandwidth_robustness.png", p_bandwidth, width = 8, height = 5, dpi = 300)
 ```
 
 ### Sensitivity to Age Specifications (Linear, Quadratic, Cubic, Non-Parametric)
 
 Next, we hold the cohort definition constant (using the 4-year window `cohort4`) and vary how the effect of age is specified:
-1. **Linear**: $$f(\text{Age}) = \text{Age}$$
-2. **Quadratic**: $$f(\text{Age}) = \text{Age} + \text{Age}^2$$
-3. **Cubic**: $$f(\text{Age}) = \text{Age} + \text{Age}^2 + \text{Age}^3$$
-4. **Non-parametric**: $$f(\text{Age}) = \text{Factor}(Agecat)$$
+1. **Linear**: $f(\text{Age}) = \text{Age}$
+2. **Quadratic**: $f(\text{Age}) = \text{Age} + \text{Age}^2$
+3. **Cubic**: $f(\text{Age}) = \text{Age} + \text{Age}^2 + \text{Age}^3$
+4. **Non-parametric**: $f(\text{Age}) = \text{Factor}(Agecat)$
 
 ```{r age-spec-robustness}
 age_formulas <- list(
-  "Linear" = "craft_fair ~ age + woman + college + white + black + year_factor + (1 | cohort4)",
-  "Quadratic" = "craft_fair ~ age + age2 + woman + college + white + black + year_factor + (1 | cohort4)",
-  "Cubic" = "craft_fair ~ age + age2 + age3 + woman + college + white + black + year_factor + (1 | cohort4)",
-  "Non-Parametric" = "craft_fair ~ as.factor(agecat) + woman + college + white + black + year_factor + (1 | cohort4)"
+  "Linear" = "omnivore_score ~ age + woman + college + white + black + year_factor + (1 | cohort4)",
+  "Quadratic" = "omnivore_score ~ age + age2 + woman + college + white + black + year_factor + (1 | cohort4)",
+  "Cubic" = "omnivore_score ~ age + age2 + age3 + woman + college + white + black + year_factor + (1 | cohort4)",
+  "Non-Parametric" = "omnivore_score ~ as.factor(agecat) + woman + college + white + black + year_factor + (1 | cohort4)"
 )
 
 age_effects <- list()
 
 for (spec_name in names(age_formulas)) {
-  mod <- glmer(as.formula(age_formulas[[spec_name]]), family = binomial, data = df_clean, nAGQ = 0)
+  mod <- glmer(as.formula(age_formulas[[spec_name]]), family = poisson(link = "log"), data = df_clean, nAGQ = 0)
   
   re <- ranef(mod)[["cohort4"]]
   re_df <- data.frame(
@@ -359,25 +369,30 @@ for (spec_name in names(age_formulas)) {
 
 df_age_robustness <- bind_rows(age_effects)
 
-ggplot(df_age_robustness, aes(x = cohort_val, y = re_effect, color = spec, linetype = spec)) +
+p_age_spec <- ggplot(df_age_robustness, aes(x = cohort_val, y = re_effect, color = spec, linetype = spec)) +
   geom_line(linewidth = 1) +
   geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.5) +
   theme_minimal() +
   labs(
-    title = "Cohort Random Effects across Age Controls (Art Festivals)",
+    title = "Cohort Random Effects across Age Controls (Omnivore Score)",
     x = "Birth Cohort",
-    y = "Estimated Cohort Random Effect (Log-Odds)",
+    y = "Estimated Cohort Random Effect (Log-Count)",
     color = "Age Specification",
     linetype = "Age Specification"
   ) +
   theme(legend.position = "bottom")
+
+p_age_spec
+
+# Save plot to Plots/ folder
+ggsave("Plots/age_specification_robustness.png", p_age_spec, width = 8, height = 5, dpi = 300)
 ```
 
 The plots confirm that **the distinct, elevated cohort effect of the "omnivorous generation" (born roughly 1930–1950) is highly robust** to both cohort window widths and functional form assumptions for age controls.
 
 ### Advanced Methodological Robustness Checks (Period Controls, Survey Weighting, Education Coding, and Life-Course Interactions)
 
-To address more specific and advanced methodological critiques, we subject our focal outcome `craft_fair` (Art Festivals) to four additional, highly rigorous robustness checks:
+To address more specific and advanced methodological critiques, we subject our focal outcome `omnivore_score` to four additional, highly rigorous robustness checks:
 
 1. **Period Control Robustness (Fixed vs. Random Year Effects)**: We evaluate whether treating Survey Year (Period) as fixed categorical indicators vs. modeling it as a cross-classified random intercept `(1 | year_factor)` in a full CCREM framework alters the estimated cohort random intercepts.
 2. **Survey Weighting Robustness (Weighted vs. Unweighted)**: We compare our baseline unweighted model with a model using normalized survey case weights (`weight_normalized`) to ensure weighting adjustments do not distort our generational peaks.
@@ -386,12 +401,12 @@ To address more specific and advanced methodological critiques, we subject our f
 
 ```{r advanced-robustness-checks, message=FALSE, warning=FALSE}
 # Baseline model (Fixed effects for Period, unweighted, binary education)
-mod_base <- glmer(craft_fair ~ age + age2 + age3 + woman + college + white + black + year_factor + (1 | cohort4), 
-                  family = binomial, data = df_clean, nAGQ = 0)
+mod_base <- glmer(omnivore_score ~ age + age2 + age3 + woman + college + white + black + year_factor + (1 | cohort4), 
+                  family = poisson(link = "log"), data = df_clean, nAGQ = 0)
 
 # Check 1: Period as Random Intercept (Cross-Classified CCREM)
-mod_re_year <- glmer(craft_fair ~ age + age2 + age3 + woman + college + white + black + (1 | year_factor) + (1 | cohort4), 
-                     family = binomial, data = df_clean, nAGQ = 0)
+mod_re_year <- glmer(omnivore_score ~ age + age2 + age3 + woman + college + white + black + (1 | year_factor) + (1 | cohort4), 
+                     family = poisson(link = "log"), data = df_clean, nAGQ = 0)
 
 re_fe_year <- data.frame(cohort_val = as.numeric(rownames(ranef(mod_base)[["cohort4"]])),
                          re_effect = ranef(mod_base)[["cohort4"]][, 1], Spec = "Period Fixed Effects (Baseline)")
@@ -403,12 +418,12 @@ p_period_check <- ggplot(bind_rows(re_fe_year, re_re_year), aes(x = cohort_val, 
   geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.5) +
   theme_minimal() +
   labs(title = "Period Specification Robustness (Fixed vs. Random Year)",
-       x = "Birth Cohort", y = "Estimated Cohort Random Effect (Log-Odds)", color = "Period Model") +
+       x = "Birth Cohort", y = "Estimated Cohort Random Effect (Log-Count)", color = "Period Model") +
   theme(legend.position = "bottom")
 
 # Check 2: Weighted vs. Unweighted
-mod_weighted <- glmer(craft_fair ~ age + age2 + age3 + woman + college + white + black + year_factor + (1 | cohort4), 
-                      family = binomial, data = df_clean, weights = weight_normalized, nAGQ = 0)
+mod_weighted <- glmer(omnivore_score ~ age + age2 + age3 + woman + college + white + black + year_factor + (1 | cohort4), 
+                      family = poisson(link = "log"), data = df_clean, weights = weight_normalized, nAGQ = 0)
 
 re_weighted <- data.frame(cohort_val = as.numeric(rownames(ranef(mod_weighted)[["cohort4"]])),
                           re_effect = ranef(mod_weighted)[["cohort4"]][, 1], Spec = "Svy Weighted HAPC")
@@ -420,15 +435,15 @@ p_weight_check <- ggplot(bind_rows(re_weighted, re_unweighted), aes(x = cohort_v
   geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.5) +
   theme_minimal() +
   labs(title = "Survey Weighting Robustness (Weighted vs. Unweighted)",
-       x = "Birth Cohort", y = "Estimated Cohort Random Effect (Log-Odds)", color = "Weighting") +
+       x = "Birth Cohort", y = "Estimated Cohort Random Effect (Log-Count)", color = "Weighting") +
   theme(legend.position = "bottom")
 
 # Check 3: Education Category Refinement (Binary vs. 6-Category)
 df_edu_clean <- df_clean |> filter(!is.na(education))
-mod_base_edu <- glmer(craft_fair ~ age + age2 + age3 + woman + college + white + black + year_factor + (1 | cohort4), 
-                      family = binomial, data = df_edu_clean, nAGQ = 0)
-mod_multi_edu <- glmer(craft_fair ~ age + age2 + age3 + woman + as.factor(education) + white + black + year_factor + (1 | cohort4), 
-                       family = binomial, data = df_edu_clean, nAGQ = 0)
+mod_base_edu <- glmer(omnivore_score ~ age + age2 + age3 + woman + college + white + black + year_factor + (1 | cohort4), 
+                      family = poisson(link = "log"), data = df_edu_clean, nAGQ = 0)
+mod_multi_edu <- glmer(omnivore_score ~ age + age2 + age3 + woman + as.factor(education) + white + black + year_factor + (1 | cohort4), 
+                       family = poisson(link = "log"), data = df_edu_clean, nAGQ = 0)
 
 re_binary_edu <- data.frame(cohort_val = as.numeric(rownames(ranef(mod_base_edu)[["cohort4"]])),
                             re_effect = ranef(mod_base_edu)[["cohort4"]][, 1], Spec = "Binary (College/No College)")
@@ -440,12 +455,12 @@ p_edu_check <- ggplot(bind_rows(re_binary_edu, re_multi_edu), aes(x = cohort_val
   geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.5) +
   theme_minimal() +
   labs(title = "Education Control Robustness (Binary vs. 6-Category)",
-       x = "Birth Cohort", y = "Estimated Cohort Random Effect (Log-Odds)", color = "Education Control") +
+       x = "Birth Cohort", y = "Estimated Cohort Random Effect (Log-Count)", color = "Education Control") +
   theme(legend.position = "bottom")
 
 # Check 4: Age-by-Demographic Interactions
-mod_inter_age <- glmer(craft_fair ~ age*college + age2*college + age3*college + age*woman + age2*woman + age3*woman + white + black + year_factor + (1 | cohort4), 
-                       family = binomial, data = df_clean, nAGQ = 0)
+mod_inter_age <- glmer(omnivore_score ~ age*college + age2*college + age3*college + age*woman + age2*woman + age3*woman + white + black + year_factor + (1 | cohort4), 
+                       family = poisson(link = "log"), data = df_clean, nAGQ = 0)
 
 re_no_inter_age <- data.frame(cohort_val = as.numeric(rownames(ranef(mod_base)[["cohort4"]])),
                               re_effect = ranef(mod_base)[["cohort4"]][, 1], Spec = "Main Effects (Baseline)")
@@ -457,15 +472,18 @@ p_inter_check <- ggplot(bind_rows(re_no_inter_age, re_inter_age), aes(x = cohort
   geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.5) +
   theme_minimal() +
   labs(title = "Life-Course Interaction Robustness (Age*Demographics)",
-       x = "Birth Cohort", y = "Estimated Cohort Random Effect (Log-Odds)", color = "Model Specification") +
+       x = "Birth Cohort", y = "Estimated Cohort Random Effect (Log-Count)", color = "Model Specification") +
   theme(legend.position = "bottom")
 
 # Display the 4 plots as a beautiful grid layout using patchwork
-(p_period_check + p_weight_check) / (p_edu_check + p_inter_check)
+p_robust_grid <- (p_period_check + p_weight_check) / (p_edu_check + p_inter_check)
+p_robust_grid
+
+# Save plot to Plots/ folder
+ggsave("Plots/advanced_robustness_grid.png", p_robust_grid, width = 12, height = 10, dpi = 300)
 ```
 
 The extensive check grid confirms **absolute empirical stability**: whether we control for period as random, apply survey case weights, control for 6 levels of education, or allow gender/college to interact with age, **the mid-century "omnivorous generation" peak remain entirely unchanged and highly distinct**.
-
 
 ---
 
@@ -473,15 +491,15 @@ The extensive check grid confirms **absolute empirical stability**: whether we c
 
 To address the concern that cohort effects are simply compositional changes (such as the rising tide of educational attainment), we run stratified analyses.
 
-### 1. Stratification by College Experience (for Art Festivals)
+### 1. Stratification by College Experience
 
 ```{r strat-college}
-# Fit HAPC for College grads and Non-College separately
-mod_coll <- glmer(craft_fair ~ age + age2 + age3 + woman + white + black + year_factor + (1 | cohort4), 
-                  family = binomial, data = filter(df_clean, college == 1), nAGQ = 0)
+# Fit HAPC for College grads and Non-College separately on Omnivore Score
+mod_coll <- glmer(omnivore_score ~ age + age2 + age3 + woman + white + black + year_factor + (1 | cohort4), 
+                  family = poisson(link = "log"), data = filter(df_clean, college == 1), nAGQ = 0)
 
-mod_nocoll <- glmer(craft_fair ~ age + age2 + age3 + woman + white + black + year_factor + (1 | cohort4), 
-                    family = binomial, data = filter(df_clean, college == 0), nAGQ = 0)
+mod_nocoll <- glmer(omnivore_score ~ age + age2 + age3 + woman + white + black + year_factor + (1 | cohort4), 
+                    family = poisson(link = "log"), data = filter(df_clean, college == 0), nAGQ = 0)
 
 re_coll <- data.frame(cohort_val = as.numeric(rownames(ranef(mod_coll)[["cohort4"]])),
                       re_effect = ranef(mod_coll)[["cohort4"]][, 1], Group = "College Experience")
@@ -491,47 +509,58 @@ re_nocoll <- data.frame(cohort_val = as.numeric(rownames(ranef(mod_nocoll)[["coh
 
 df_strat_coll <- bind_rows(re_coll, re_nocoll)
 
-ggplot(df_strat_coll, aes(x = cohort_val, y = re_effect, color = Group)) +
+p_strat_coll <- ggplot(df_strat_coll, aes(x = cohort_val, y = re_effect, color = Group)) +
   geom_line(linewidth = 1) +
   geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.5) +
   theme_minimal() +
   labs(
-    title = "Art Festival Cohort Effects Stratified by Education",
+    title = "Omnivore Score Cohort Effects Stratified by Education",
     x = "Birth Cohort",
-    y = "Estimated Cohort Random Effect (Log-Odds)",
+    y = "Estimated Cohort Random Effect (Log-Count)",
     color = "Education Level"
   ) +
   theme(legend.position = "bottom")
+
+p_strat_coll
+
+# Save plot to Plots/ folder
+ggsave("Plots/education_stratified_effects.png", p_strat_coll, width = 8, height = 5, dpi = 300)
 ```
 
-### 2. Stratification by Race (for Jazz Concerts)
+### 2. Stratification by Race
 
 ```{r strat-race}
-mod_white_jazz <- glmer(jazz ~ age + age2 + age3 + woman + college + year_factor + (1 | cohort4), 
-                        family = binomial, data = filter(df_clean, white == 1), nAGQ = 0)
+# Fit HAPC for White and Black respondents separately on Omnivore Score
+mod_white_omni <- glmer(omnivore_score ~ age + age2 + age3 + woman + college + year_factor + (1 | cohort4), 
+                        family = poisson(link = "log"), data = filter(df_clean, white == 1), nAGQ = 0)
 
-mod_black_jazz <- glmer(jazz ~ age + age2 + age3 + woman + college + year_factor + (1 | cohort4), 
-                        family = binomial, data = filter(df_clean, black == 1), nAGQ = 0)
+mod_black_omni <- glmer(omnivore_score ~ age + age2 + age3 + woman + college + year_factor + (1 | cohort4), 
+                        family = poisson(link = "log"), data = filter(df_clean, black == 1), nAGQ = 0)
 
-re_white_jazz <- data.frame(cohort_val = as.numeric(rownames(ranef(mod_white_jazz)[["cohort4"]])),
-                            re_effect = ranef(mod_white_jazz)[["cohort4"]][, 1], Group = "White")
+re_white_omni <- data.frame(cohort_val = as.numeric(rownames(ranef(mod_white_omni)[["cohort4"]])),
+                            re_effect = ranef(mod_white_omni)[["cohort4"]][, 1], Group = "White")
 
-re_black_jazz <- data.frame(cohort_val = as.numeric(rownames(ranef(mod_black_jazz)[["cohort4"]])),
-                            re_effect = ranef(mod_black_jazz)[["cohort4"]][, 1], Group = "Black")
+re_black_omni <- data.frame(cohort_val = as.numeric(rownames(ranef(mod_black_omni)[["cohort4"]])),
+                            re_effect = ranef(mod_black_omni)[["cohort4"]][, 1], Group = "Black")
 
-df_strat_race <- bind_rows(re_white_jazz, re_black_jazz)
+df_strat_race <- bind_rows(re_white_omni, re_black_omni)
 
-ggplot(df_strat_race, aes(x = cohort_val, y = re_effect, color = Group)) +
+p_strat_race <- ggplot(df_strat_race, aes(x = cohort_val, y = re_effect, color = Group)) +
   geom_line(linewidth = 1) +
   geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.5) +
   theme_minimal() +
   labs(
-    title = "Jazz Cohort Effects Stratified by Race",
+    title = "Omnivore Score Cohort Effects Stratified by Race",
     x = "Birth Cohort",
-    y = "Estimated Cohort Random Effect (Log-Odds)",
+    y = "Estimated Cohort Random Effect (Log-Count)",
     color = "Race"
   ) +
   theme(legend.position = "bottom")
+
+p_strat_race
+
+# Save plot to Plots/ folder
+ggsave("Plots/race_stratified_effects.png", p_strat_race, width = 8, height = 5, dpi = 300)
 ```
 
 ---
@@ -546,37 +575,39 @@ In this section, we implement two cutting-edge alternative APC estimation method
 
 To address Reviewer A's skepticism regarding the linear identification problem of APC models, we apply Fosse and Winship's (2018) bounding approach. This approach recognizes that while the overall linear slopes are underidentified, non-linear deviations are perfectly identified.
 
-We can represent any candidate set of cohort coefficients $$c_j^*$$ as a function of the estimated coefficients $$c_j$$ from an arbitrary reference model and a single underidentified slope scalar $$s$$:
-$$c_j^*(s) = c_j + s \cdot (C_j - C_{ref})$$
+We can represent any candidate set of cohort coefficients $c_j^*$ as a function of the estimated coefficients $c_j$ from an arbitrary reference model and a single underidentified slope scalar $s$:
+$c_j^*(s) = c_j + s \cdot (C_j - C_{ref})$
 To maintain model equivalence, we adjust Age and Period coefficients by:
-$$\theta_a^*(A) = \hat{\theta}_a(A) + s \cdot (A - A_{ref})$$
-$$\theta_p^*(P) = \hat{\theta}_p(P) - s \cdot (P - P_{ref})$$
+$\theta_a^*(A) = \hat{\theta}_a(A) + s \cdot (A - A_{ref})$
+$\theta_p^*(P) = \hat{\theta}_p(P) - s \cdot (P - P_{ref})$
 
-We impose two highly plausible qualitative constraints to solve for the bounds of $$s$$:
-1. **Age-Decline Assumption**: The age profile of participation should not increase between ages 50 and 80: $$\theta_a^*(80) \le \theta_a^*(50)$$. This implies $$s \le (\hat{\theta}_a(50) - \hat{\theta}_a(80)) / 30$$.
-2. **Period-Trend Assumption**: The period effect trend should be negative or zero (matching the general secular decline in cultural attendance in the US): $$P_{2012}^* \le P_{1982}^*$$, which implies $$s \ge (\hat{\theta}_p(2012) - \hat{\theta}_p(1982)) / 30$$. We also assume the period effect does not decline by more than 1.5 log-odds over the 30-year span ($$P_{2012}^* \ge P_{1982}^* - 1.5$$), which implies $$s \le (\hat{\theta}_p(2012) - \hat{\theta}_p(1982) + 1.5) / 30$$.
+We impose two highly plausible qualitative constraints to solve for the bounds of $s$:
+1. **Age-Decline Assumption**: The age profile of participation should not increase between ages 50 and 80: $\theta_a^*(80) \le \theta_a^*(50)$. This implies $s \le (\hat{\theta}_a(50) - \hat{\theta}_a(80)) / 30$.
+2. **Period-Trend Assumption**: The period effect trend should be negative or zero (matching the general secular decline in cultural attendance in the US): $P_{2012}^* \le P_{1982}^*$, which implies $s \ge (\hat{\theta}_p(2012) - \hat{\theta}_p(1982)) / 30$. We also assume the period effect does not decline by more than 1.5 log-odds over the 30-year span ($P_{2012}^* \ge P_{1982}^* - 1.5$), which implies $s \le (\hat{\theta}_p(2012) - \hat{\theta}_p(1982) + 1.5) / 30$.
 
-Let's compute and plot these bounds.
+Let's compute and plot these bounds for our aggregate Omnivore Score using Poisson regression.
 
 ```{r fosse-winship-bounds}
-# Fit standard categorical APC GLM reference model
-fit_apc <- glm(craft_fair ~ as.factor(agecat) + as.factor(year) + as.factor(cohort5) + woman + college + white + black,
-               family = binomial(link = "logit"), data = df_clean)
-
-coefs <- coef(fit_apc)
+# Fit standard categorical APC GLM reference model on Omnivore Score using Poisson
+fit_apc_omni <- glm(
+  omnivore_score ~ as.factor(agecat) + as.factor(year) + as.factor(cohort5) + woman + college + white + black,
+  family = poisson(link = "log"), 
+  data = df_clean
+)
+coefs_omni <- coef(fit_apc_omni)
 
 # Build coefficient vectors including reference category (0)
 age_vals <- seq(15, 95, by = 5)
-age_coefs <- c(0, coefs[grep("as.factor\\(agecat\\)", names(coefs))])
-names(age_coefs) <- age_vals
+age_coefs_omni <- c(0, coefs_omni[grep("as.factor\\(agecat\\)", names(coefs_omni))])
+names(age_coefs_omni) <- age_vals
 
 period_years <- c(1982, 1985, 1992, 2002, 2008, 2012)
-period_coefs <- c(0, coefs[grep("as.factor\\(year\\)", names(coefs))])
-names(period_coefs) <- period_years
+period_coefs_omni <- c(0, coefs_omni[grep("as.factor\\(year\\)", names(coefs_omni))])
+names(period_coefs_omni) <- period_years
 
 cohort_years <- seq(1890, 1990, by = 5)
-cohort_coefs <- c(0, coefs[grep("as.factor\\(cohort5\\)", names(coefs))])
-names(cohort_coefs) <- cohort_years
+cohort_coefs_omni <- c(0, coefs_omni[grep("as.factor\\(cohort5\\)", names(coefs_omni))])
+names(cohort_coefs_omni) <- cohort_years
 
 # Set reference years
 A_ref <- 15
@@ -584,130 +615,66 @@ P_ref <- 1982
 C_ref <- P_ref - A_ref
 
 # Compute bounds on slope s
-s_upper_age <- as.numeric((age_coefs["50"] - age_coefs["80"]) / 30)
-s_upper_period <- as.numeric((period_coefs["2012"] - period_coefs["1982"] + 1.5) / 30)
-s_lower_period <- as.numeric((period_coefs["2012"] - period_coefs["1982"]) / 30)
+s_upper_age_o <- as.numeric((age_coefs_omni["50"] - age_coefs_omni["80"]) / 30)
+s_upper_period_o <- as.numeric((period_coefs_omni["2012"] - period_coefs_omni["1982"] + 1.5) / 30)
+s_lower_period_o <- as.numeric((period_coefs_omni["2012"] - period_coefs_omni["1982"]) / 30)
 
 # Determine valid bounds
-s_max <- min(s_upper_age, s_upper_period)
-s_min <- s_lower_period
+s_max_o <- min(s_upper_age_o, s_upper_period_o)
+s_min_o <- s_lower_period_o
 
-message("Computed Bounds on s: [", round(s_min, 4), ", ", round(s_max, 4), "]")
+message("Computed Bounds on s: [", round(s_min_o, 4), ", ", round(s_max_o, 4), "]")
 
 # Create bounded cohort curves
-df_bounds <- tibble(
+df_bounds_omni <- tibble(
   cohort = cohort_years,
-  effect_min = cohort_coefs + s_min * (cohort - C_ref),
-  effect_zero = cohort_coefs,
-  effect_max = cohort_coefs + s_max * (cohort - C_ref)
+  effect_min = cohort_coefs_omni + s_min_o * (cohort - C_ref),
+  effect_zero = cohort_coefs_omni,
+  effect_max = cohort_coefs_omni + s_max_o * (cohort - C_ref)
 )
 
-p_bounds <- ggplot(df_bounds, aes(x = cohort)) +
+p_bounds_omni <- ggplot(df_bounds_omni, aes(x = cohort)) +
   geom_line(aes(y = effect_zero, color = "s = 0 (Baseline Reference)"), linewidth = 1) +
-  geom_line(aes(y = effect_min, color = paste("s =", round(s_min, 4), "(Lower Bound)")), linewidth = 1, linetype = "dashed") +
-  geom_line(aes(y = effect_max, color = paste("s =", round(s_max, 4), "(Upper Bound)")), linewidth = 1, linetype = "dotdash") +
+  geom_line(aes(y = effect_min, color = paste("s =", round(s_min_o, 4), "(Lower Bound)")), linewidth = 1, linetype = "dashed") +
+  geom_line(aes(y = effect_max, color = paste("s =", round(s_max_o, 4), "(Upper Bound)")), linewidth = 1, linetype = "dotdash") +
   geom_hline(yintercept = 0, linetype = "solid", alpha = 0.3) +
   theme_minimal() +
   scale_color_brewer(palette = "Set1") +
   labs(
-    title = "Bounded Cohort Effects (Fosse & Winship Approach)",
-    subtitle = "Art Festival/Craft Fair Attendance (SPPA 1982-2012)",
+    title = "Bounded Cohort Effects for Omnivore Score",
+    subtitle = "Fosse & Winship Bounding Approach (Poisson Model)",
     x = "Birth Cohort",
-    y = "Cohort Effect (Log-Odds)",
+    y = "Cohort Effect (Log-Count)",
     color = "Slope Shift (s)"
   ) +
   theme(legend.position = "bottom")
 
-p_bounds
+p_bounds_omni
 
 # Save plot to Plots/ folder
-ggsave("Plots/cohort_bounds_fosse_winship.png", p_bounds, width = 8, height = 5, dpi = 300)
+ggsave("Plots/cohort_bounds_omnivore.png", p_bounds_omni, width = 8, height = 5, dpi = 300)
 ```
 
-Across all mathematically plausible bounds for the slope parameter $$s$$, the non-monotonic shape remains highly stable: the cohort effects for those born between 1915 and 1955 are consistently elevated compared to the post-1970 generations.
-
-#### Robustness: Secondary Outcomes
-
-To demonstrate that this bounding approach is general and that other cultural participation outcomes are robust to linear trend specification, we apply Fosse and Winship's method to all remaining secondary outcomes (`jazz`, `artmuseum`, `classical`, `opera`, `musical`, `ballet`, `park`).
-
-Using the same qualitative assumptions (non-increasing age profiles between 50 and 80, and declining/flat period trends over 1982-2012), we solve for the bounds on the cohort slope parameter $$s$$ and plot the resulting cohort curves.
-
-```{r fosse-winship-bounds-secondary, fig.width=8, fig.height=5}
-secondary_outcomes <- c("jazz", "artmuseum", "classical", "opera", "musical", "ballet", "park")
-
-for (outcome in secondary_outcomes) {
-  outcome_title <- str_to_title(outcome)
-  if (outcome == "park") outcome_title <- "Historic Parks/Monuments"
-  if (outcome == "artmuseum") outcome_title <- "Art Museums"
-
-  fmla <- as.formula(paste0(outcome, " ~ as.factor(agecat) + as.factor(year) + as.factor(cohort5) + woman + college + white + black"))
-  fit_glm <- glm(fmla, family = binomial(link = "logit"), data = df_clean)
-  
-  coefs_out <- coef(fit_glm)
-  
-  age_coefs_out <- c(0, coefs_out[grep("as.factor\\(agecat\\)", names(coefs_out))])
-  names(age_coefs_out) <- age_vals
-  
-  period_coefs_out <- c(0, coefs_out[grep("as.factor\\(year\\)", names(coefs_out))])
-  names(period_coefs_out) <- period_years
-  
-  cohort_coefs_out <- c(0, coefs_out[grep("as.factor\\(cohort5\\)", names(coefs_out))])
-  names(cohort_coefs_out) <- cohort_years
-  
-  s_upper_age <- as.numeric((age_coefs_out["50"] - age_coefs_out["80"]) / 30)
-  s_upper_period <- as.numeric((period_coefs_out["2012"] - period_coefs_out["1982"] + 1.5) / 30)
-  s_lower_period <- as.numeric((period_coefs_out["2012"] - period_coefs_out["1982"]) / 30)
-  
-  s_max_out <- min(s_upper_age, s_upper_period)
-  s_min_out <- s_lower_period
-  
-  df_bounds_out <- tibble(
-    cohort = cohort_years,
-    effect_min = cohort_coefs_out + s_min_out * (cohort - C_ref),
-    effect_zero = cohort_coefs_out,
-    effect_max = cohort_coefs_out + s_max_out * (cohort - C_ref)
-  )
-  
-  p_bounds <- ggplot(df_bounds_out, aes(x = cohort)) +
-    geom_line(aes(y = effect_zero, color = "s = 0 (Baseline)"), linewidth = 1) +
-    geom_line(aes(y = effect_min, color = paste("s =", round(s_min_out, 4), "(Lower Bound)")), linewidth = 1, linetype = "dashed") +
-    geom_line(aes(y = effect_max, color = paste("s =", round(s_max_out, 4), "(Upper Bound)")), linewidth = 1, linetype = "dotdash") +
-    geom_hline(yintercept = 0, linetype = "solid", alpha = 0.3) +
-    theme_minimal() +
-    scale_color_brewer(palette = "Set1") +
-    labs(
-      title = paste("Bounded Cohort Effects for", outcome_title, "(Fosse & Winship)"),
-      x = "Birth Cohort",
-      y = "Cohort Effect (Log-Odds)",
-      color = "Slope Shift (s)"
-    ) +
-    theme(legend.position = "bottom")
-  
-  print(p_bounds)
-  ggsave(paste0("Plots/cohort_bounds_", outcome, ".png"), p_bounds, width = 8, height = 5, dpi = 300)
-}
-```
-
-The secondary outcomes yield important findings, with different activities reflecting varying generational trajectories depending on their historical adoption paths.
+Across all mathematically plausible bounds for the slope parameter $s$, the non-monotonic shape remains highly stable: the cohort effects for those born between 1915 and 1955 are consistently elevated compared to the post-1970 generations.
 
 ### 2. Generalized Additive Models (GAMs) & Lexis Surfaces
 
-To rule out any bias introduced by rigid parametric specifications of age or cohort bins, we model the probability of participation non-parametrically using a Generalized Additive Model (GAM) with a bivariate tensor-product spline:
-$$\text{logit}(P(Y_{i} = 1)) = \beta_0 + te(\text{Age}_i, \text{Period}_i) + \boldsymbol{\delta} \mathbf{X}_{i}$$
-This models the full continuous Age-by-Period surface. Since birth cohorts represent diagonals on this surface ($$Cohort = Period - Age$$), we can visually inspect if the high-participation "ridge" lies along the diagonal bands of the 1930–1950 generations.
+To rule out any bias introduced by rigid parametric specifications of age or cohort bins, we model the expected Omnivore Score non-parametrically using a Generalized Additive Model (GAM) with a bivariate tensor-product spline:
+$\log(\mu_i) = \beta_0 + te(\text{Age}_i, \text{Period}_i) + \boldsymbol{\delta} \mathbf{X}_{i}$
+This models the full continuous Age-by-Period surface. Since birth cohorts represent diagonals on this surface ($Cohort = Period - Age$), we can visually inspect if the high-participation "ridge" lies along the diagonal bands of the 1930–1950 generations.
 
 ```{r gam-lexis-surface}
 library(mgcv)
 
-# Fit GAM with tensor-product spline of age and period
-fit_gam <- gam(
-  craft_fair ~ te(age, year, k = c(5, 5)) + woman + college + white + black,
-  family = binomial(link = "logit"),
+# Fit GAM with tensor-product spline of age and period for Omnivore Score using Poisson
+fit_gam_omni <- gam(
+  omnivore_score ~ te(age, year, k = c(5, 5)) + woman + college + white + black,
+  family = poisson(link = "log"),
   data = df_clean
 )
 
 # Predict participation over continuous age-by-period grid
-grid_data <- expand_grid(
+grid_data_omni <- expand_grid(
   age = seq(15, 90, by = 1),
   year = seq(1982, 2012, by = 1),
   woman = 1,
@@ -716,10 +683,10 @@ grid_data <- expand_grid(
   black = 0
 )
 
-grid_data$pred_prob <- predict(fit_gam, newdata = grid_data, type = "response")
+grid_data_omni$pred_count <- predict(fit_gam_omni, newdata = grid_data_omni, type = "response")
 
 # Plot Lexis Surface Heatmap with cohort diagonals
-p_lexis <- ggplot(grid_data, aes(x = year, y = age, fill = pred_prob)) +
+p_lexis_omni <- ggplot(grid_data_omni, aes(x = year, y = age, fill = pred_count)) +
   geom_tile() +
   scale_fill_viridis_c(option = "plasma") +
   # Draw cohort diagonals for 1915, 1935, 1955, 1975
@@ -729,200 +696,28 @@ p_lexis <- ggplot(grid_data, aes(x = year, y = age, fill = pred_prob)) +
   geom_abline(intercept = -1975, slope = 1, color = "white", linetype = "dashed", linewidth = 0.8) +
   theme_minimal() +
   labs(
-    title = "Lexis Surface of Craft Fair Participation (GAM predictions)",
-    subtitle = "Dashed lines represent cohort diagonals (Birth cohorts 1915, 1935, 1955, 1975)",
-    x = "Survey Year (Period)",
-    y = "Age",
-    fill = "Pr(Participation)"
-  ) +
-  theme(plot.title = element_text(face = "bold"))
-
-p_lexis
-
-# Save plot to Plots/ folder
-ggsave("Plots/lexis_surface_gam.png", p_lexis, width = 8, height = 5.5, dpi = 300)
-```
-
-The Lexis surface heatmap reveals a distinct diagonal "ridge" of highest participation (the bright yellow band) running between the **1935** and **1955** cohort lines. This visually demonstrates that the high rate of participation is indeed an enduring generational feature of the mid-century birth cohorts, which persists as they age across the 30-year span.
-
-#### Comparative Lexis Surfaces: Secondary Outcomes
-
-To contrast our primary outcome with other cultural activities, we fit identical non-parametric GAMs for all secondary outcomes, predicting participation rates over the continuous Age-by-Period Lexis grid.
-
-```{r gam-lexis-surface-secondary, fig.width=8, fig.height=5.5}
-for (outcome in secondary_outcomes) {
-  outcome_title <- str_to_title(outcome)
-  if (outcome == "park") outcome_title <- "Historic Parks/Monuments"
-  if (outcome == "artmuseum") outcome_title <- "Art Museums"
-
-  fmla <- as.formula(paste0(outcome, " ~ te(age, year, k = c(5, 5)) + woman + college + white + black"))
-  fit_gam_out <- gam(fmla, family = binomial(link = "logit"), data = df_clean)
-  
-  grid_data_out <- expand_grid(
-    age = seq(15, 90, by = 1),
-    year = seq(1982, 2012, by = 1),
-    woman = 1,
-    college = 1,
-    white = 1,
-    black = 0
-  )
-  
-  grid_data_out$pred_prob <- predict(fit_gam_out, newdata = grid_data_out, type = "response")
-  
-  p_lexis_out <- ggplot(grid_data_out, aes(x = year, y = age, fill = pred_prob)) +
-    geom_tile() +
-    scale_fill_viridis_c(option = "plasma") +
-    geom_abline(intercept = -1915, slope = 1, color = "white", linetype = "dashed", linewidth = 0.8) +
-    geom_abline(intercept = -1935, slope = 1, color = "white", linetype = "dashed", linewidth = 0.8) +
-    geom_abline(intercept = -1955, slope = 1, color = "white", linetype = "dashed", linewidth = 0.8) +
-    geom_abline(intercept = -1975, slope = 1, color = "white", linetype = "dashed", linewidth = 0.8) +
-    theme_minimal() +
-    labs(
-      title = paste("Lexis Surface of", outcome_title, "Participation"),
-      subtitle = "Dashed lines represent cohort diagonals (Birth cohorts 1915, 1935, 1955, 1975)",
-      x = "Survey Year (Period)",
-      y = "Age",
-      fill = "Pr(Participation)"
-    ) +
-    theme(plot.title = element_text(face = "bold"))
-  
-  print(p_lexis_out)
-  ggsave(paste0("Plots/lexis_surface_gam_", outcome, ".png"), p_lexis_out, width = 8, height = 5.5, dpi = 300)
-}
-```
-
-The comparative surfaces show fascinating structural differences across cultural genres, ranging from pure lifecycle effects to prominent generational imprinting ridges.
-
----
-
-## 8. Aggregate Omnivore Score Analysis
-
-To confirm that the generational imprinting hypothesis holds not just for individual activities, but for overall cultural omnivorousness, we calculate an aggregate **Omnivore Score** (0-8 count) and model it using HAPC Poisson regression, Fosse & Winship Bounding, and Lexis Surface GAMs.
-
-```{r aggregate-omnivore}
-# Calculate Omnivore Score
-df_clean <- df_clean |>
-  mutate(omnivore_score = rowSums(across(all_of(outcomes)), na.rm = TRUE))
-
-# 1. HAPC Poisson Model
-mod_omnivore <- glmer(
-  omnivore_score ~ age + age2 + age3 + woman + college + white + black + year_factor + (1 | cohort4),
-  family = poisson(link = "log"),
-  data = df_clean,
-  nAGQ = 0
-)
-
-re_omni <- ranef(mod_omnivore)[["cohort4"]]
-df_re_omni <- data.frame(
-  cohort_val = as.numeric(rownames(re_omni)),
-  re_effect = re_omni[, 1]
-)
-
-p_omni_re <- ggplot(df_re_omni, aes(x = cohort_val, y = re_effect)) +
-  geom_line(linewidth = 1, color = "darkred") +
-  geom_point(color = "darkred") +
-  geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.5) +
-  theme_minimal() +
-  labs(
-    title = "HAPC Cohort Effects for the Omnivore Score (0-8 Activities)",
-    x = "Birth Cohort",
-    y = "Cohort Random Effect (Log-Count)"
-  )
-print(p_omni_re)
-ggsave("Plots/hapc_omnivore_score.png", p_omni_re, width = 8, height = 5, dpi = 300)
-
-# 2. Fosse & Winship Bounding
-fit_apc_omni <- glm(
-  omnivore_score ~ as.factor(agecat) + as.factor(year) + as.factor(cohort5) + woman + college + white + black,
-  family = poisson(link = "log"), 
-  data = df_clean
-)
-coefs_omni <- coef(fit_apc_omni)
-
-age_coefs_omni <- c(0, coefs_omni[grep("as.factor\\(agecat\\)", names(coefs_omni))])
-names(age_coefs_omni) <- age_vals
-period_coefs_omni <- c(0, coefs_omni[grep("as.factor\\(year\\)", names(coefs_omni))])
-names(period_coefs_omni) <- period_years
-cohort_coefs_omni <- c(0, coefs_omni[grep("as.factor\\(cohort5\\)", names(coefs_omni))])
-names(cohort_coefs_omni) <- cohort_years
-
-s_upper_age_o <- as.numeric((age_coefs_omni["50"] - age_coefs_omni["80"]) / 30)
-s_upper_period_o <- as.numeric((period_coefs_omni["2012"] - period_coefs_omni["1982"] + 1.5) / 30)
-s_lower_period_o <- as.numeric((period_coefs_omni["2012"] - period_coefs_omni["1982"]) / 30)
-
-s_max_o <- min(s_upper_age_o, s_upper_period_o)
-s_min_o <- s_lower_period_o
-
-df_bounds_omni <- tibble(
-  cohort = cohort_years,
-  effect_min = cohort_coefs_omni + s_min_o * (cohort - C_ref),
-  effect_zero = cohort_coefs_omni,
-  effect_max = cohort_coefs_omni + s_max_o * (cohort - C_ref)
-)
-
-p_bounds_omni <- ggplot(df_bounds_omni, aes(x = cohort)) +
-  geom_line(aes(y = effect_zero, color = "s = 0 (Baseline)"), linewidth = 1) +
-  geom_line(aes(y = effect_min, color = paste("s =", round(s_min_o, 4), "(Lower Bound)")), linewidth = 1, linetype = "dashed") +
-  geom_line(aes(y = effect_max, color = paste("s =", round(s_max_o, 4), "(Upper Bound)")), linewidth = 1, linetype = "dotdash") +
-  geom_hline(yintercept = 0, linetype = "solid", alpha = 0.3) +
-  theme_minimal() +
-  scale_color_brewer(palette = "Set1") +
-  labs(
-    title = "Bounded Cohort Effects for Omnivore Score",
-    x = "Birth Cohort",
-    y = "Cohort Effect (Log-Count)",
-    color = "Slope Shift (s)"
-  ) +
-  theme(legend.position = "bottom")
-
-print(p_bounds_omni)
-ggsave("Plots/cohort_bounds_omnivore.png", p_bounds_omni, width = 8, height = 5, dpi = 300)
-
-# 3. GAM Lexis Surface
-fit_gam_omni <- gam(
-  omnivore_score ~ te(age, year, k = c(5, 5)) + woman + college + white + black,
-  family = poisson(link = "log"),
-  data = df_clean
-)
-
-grid_data_omni <- expand_grid(
-  age = seq(15, 90, by = 1),
-  year = seq(1982, 2012, by = 1),
-  woman = 1,
-  college = 1,
-  white = 1,
-  black = 0
-)
-grid_data_omni$pred_count <- predict(fit_gam_omni, newdata = grid_data_omni, type = "response")
-
-p_lexis_omni <- ggplot(grid_data_omni, aes(x = year, y = age, fill = pred_count)) +
-  geom_tile() +
-  scale_fill_viridis_c(option = "plasma") +
-  geom_abline(intercept = -1915, slope = 1, color = "white", linetype = "dashed", linewidth = 0.8) +
-  geom_abline(intercept = -1935, slope = 1, color = "white", linetype = "dashed", linewidth = 0.8) +
-  geom_abline(intercept = -1955, slope = 1, color = "white", linetype = "dashed", linewidth = 0.8) +
-  geom_abline(intercept = -1975, slope = 1, color = "white", linetype = "dashed", linewidth = 0.8) +
-  theme_minimal() +
-  labs(
     title = "Lexis Surface of Omnivore Score (GAM predictions)",
-    subtitle = "Dashed lines represent cohort diagonals",
+    subtitle = "Dashed lines represent cohort diagonals (Birth cohorts 1915, 1935, 1955, 1975)",
     x = "Survey Year (Period)",
     y = "Age",
     fill = "Expected Count"
   ) +
   theme(plot.title = element_text(face = "bold"))
 
-print(p_lexis_omni)
+p_lexis_omni
+
+# Save plot to Plots/ folder
 ggsave("Plots/lexis_surface_gam_omnivore.png", p_lexis_omni, width = 8, height = 5.5, dpi = 300)
 ```
 
-The aggregate analyses confirm the core thesis: the overall rate of omnivorous cultural consumption exhibits a striking, robust generation effect, structurally isolated from individual life-course aging or general period declines.
+The Lexis surface heatmap reveals a distinct diagonal "ridge" of highest expected score (the bright yellow/orange band) running between the **1935** and **1955** cohort lines. This visually demonstrates that the high rate of overall cultural omnivorousness is indeed an enduring generational feature of the mid-century birth cohorts, which persists as they age across the 30-year span.
 
 ---
 
-## 9. Conclusion
+## 8. Conclusion
 
 By shifting our analytical pipeline to R and Quarto:
 - We have established a completely self-contained, reproducible, and transparent data pipeline starting directly from the raw SPPA cumulative file.
 - We have demonstrated that the cohort effects identifying the **"Omnivorous Generation" (born 1930–1950)** are remarkably robust to specification choices, addressing reviewer skepticism.
 - Stratified analyses demonstrate that these cohort dynamics are not artifacts of shifting population demographics (like education or race), but rather speak to the durable historical imprint of early-life institutional environments.
+
