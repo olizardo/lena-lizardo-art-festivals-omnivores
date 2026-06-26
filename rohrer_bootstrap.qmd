@@ -1,0 +1,163 @@
+---
+title: "Rohrer Bootstrapping: Bounded Cohort Effects"
+format: html
+---
+
+## Setup
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(haven)
+library(boot)
+
+# Load data (assuming df_clean is already saved or we can recreate it)
+# For this script we will recreate df_clean to be standalone
+df_raw <- read_dta("sppa1982-2012_stata.dta", col_select = c(
+  "persid", "year", "age", "gender", "education", "race", "hispanic",
+  "jazz", "classical", "opera", "musical", "ballet", "artmuseum", "craft_fair", "park",
+  "weight_normalized"
+))
+
+outcomes <- c("jazz", "classical", "opera", "musical", "ballet", "artmuseum", "craft_fair", "park")
+
+df_clean <- df_raw |>
+  mutate(across(all_of(outcomes), ~ case_when(. == 1 ~ 1, . == 2 ~ 0, TRUE ~ NA_real_))) |>
+  filter(!is.na(craft_fair)) |>
+  mutate(
+    woman = if_else(gender == 2, 1, 0),
+    college = if_else(education > 4, 1, 0),
+    white = if_else(race == 1, 1, 0),
+    black = if_else(race == 2, 1, 0),
+    agecat = cut(age, breaks = seq(15, 100, by = 5), right = FALSE, labels = FALSE),
+    cohort = year - age
+  ) |>
+  filter(age >= 15 & age <= 95)
+
+get_cohort_bins <- function(cohort_val, width, start_yr = 1885, end_yr = 1995) {
+  breaks <- seq(start_yr, end_yr, by = width)
+  bins <- cut(cohort_val, breaks = breaks, right = FALSE, labels = FALSE)
+  bin_labels <- breaks[bins]
+  if (width == 5) bin_labels[bin_labels == 1885] <- 1890
+  return(bin_labels)
+}
+
+df_clean <- df_clean |>
+  mutate(
+    cohort5 = get_cohort_bins(cohort, 5),
+    omnivore_score = rowSums(across(all_of(outcomes)), na.rm = TRUE)
+  )
+
+# Precompute df_bounds_omni for plotting later
+c_years <- seq(1890, 1990, by = 5)
+df_bounds_omni <- tibble(cohort = c_years)
+```
+
+### Incorporating Sampling Variability via Bootstrapping
+
+As noted by Rohrer (2025), the bounding procedure incorporates uncertainty regarding the age-period-cohort identification problem but does not inherently account for statistical sampling error. To generate confidence intervals around our bounded cohort effects and test whether the estimated bounds significantly differ from zero, we can bootstrap the entire bounding procedure.
+
+```{r bootstrap-bounds, cache=TRUE, message=FALSE, warning=FALSE}
+# Define the bootstrapping function
+boot_bounds <- function(data, indices) {
+  d <- data[indices, ]
+  fit <- glm(
+    omnivore_score ~ as.factor(agecat) + as.factor(year) + as.factor(cohort5) + woman + college + white + black,
+    family = poisson(link = "log"), 
+    data = d
+  )
+  coefs <- coef(fit)
+  
+  c_years <- seq(1890, 1990, by = 5)
+  c_coefs <- rep(NA, length(c_years))
+  names(c_coefs) <- c_years
+  c_coefs["1890"] <- 0 # reference
+  for (cy in c_years[-1]) {
+    nm <- paste0("as.factor(cohort5)", cy)
+    if (nm %in% names(coefs)) c_coefs[as.character(cy)] <- coefs[nm]
+  }
+  
+  a_years <- seq(15, 95, by = 5)
+  a_cats <- 1:17
+  a_coefs <- rep(NA, length(a_years))
+  names(a_coefs) <- a_years
+  a_coefs["15"] <- 0 # reference
+  for (i in 2:17) {
+    nm <- paste0("as.factor(agecat)", i)
+    if (nm %in% names(coefs)) a_coefs[as.character(a_years[i])] <- coefs[nm]
+  }
+  
+  p_years <- c(1982, 1985, 1992, 2002, 2008, 2012)
+  p_coefs <- rep(NA, length(p_years))
+  names(p_coefs) <- p_years
+  p_coefs["1982"] <- 0 # reference
+  for (py in p_years[-1]) {
+    nm <- paste0("as.factor(year)", py)
+    if (nm %in% names(coefs)) p_coefs[as.character(py)] <- coefs[nm]
+  }
+  
+  A_ref <- 15
+  P_ref <- 1982
+  C_ref <- P_ref - A_ref
+  
+  s_upper_age <- as.numeric((a_coefs["50"] - a_coefs["80"]) / 30)
+  s_upper_period <- as.numeric((p_coefs["2012"] - p_coefs["1982"] + 1.5) / 30)
+  s_lower_period <- as.numeric((p_coefs["2012"] - p_coefs["1982"]) / 30)
+
+  s_max <- min(s_upper_age, s_upper_period, na.rm=TRUE)
+  s_min <- s_lower_period
+  
+  eff_min <- c_coefs + s_min * (c_years - C_ref)
+  eff_max <- c_coefs + s_max * (c_years - C_ref)
+  
+  return(c(eff_min, eff_max, c_coefs, s_min, s_max))
+}
+
+# Run bootstrap (R=100 for computational efficiency)
+set.seed(42)
+boot_results <- boot(data = df_clean, statistic = boot_bounds, R = 100)
+
+# Extract 95% CIs
+n_c <- length(c_years)
+
+ci_min_lower <- apply(boot_results$t[, 1:n_c], 2, quantile, probs = 0.025, na.rm=TRUE)
+ci_min_upper <- apply(boot_results$t[, 1:n_c], 2, quantile, probs = 0.975, na.rm=TRUE)
+
+ci_max_lower <- apply(boot_results$t[, (n_c+1):(2*n_c)], 2, quantile, probs = 0.025, na.rm=TRUE)
+ci_max_upper <- apply(boot_results$t[, (n_c+1):(2*n_c)], 2, quantile, probs = 0.975, na.rm=TRUE)
+
+effect_zero_mean <- apply(boot_results$t[, (2*n_c+1):(3*n_c)], 2, mean, na.rm=TRUE)
+effect_min_mean <- apply(boot_results$t[, 1:n_c], 2, mean, na.rm=TRUE)
+effect_max_mean <- apply(boot_results$t[, (n_c+1):(2*n_c)], 2, mean, na.rm=TRUE)
+
+df_bounds_boot <- df_bounds_omni |>
+  mutate(
+    effect_zero = effect_zero_mean,
+    effect_min = effect_min_mean,
+    effect_max = effect_max_mean,
+    min_ci_low = ci_min_lower,
+    min_ci_high = ci_min_upper,
+    max_ci_low = ci_max_lower,
+    max_ci_high = ci_max_upper
+  )
+
+p_bounds_boot <- ggplot(df_bounds_boot, aes(x = cohort)) +
+  geom_ribbon(aes(ymin = min_ci_low, ymax = min_ci_high), fill = "blue", alpha = 0.15) +
+  geom_ribbon(aes(ymin = max_ci_low, ymax = max_ci_high), fill = "red", alpha = 0.15) +
+  geom_line(aes(y = effect_min, color = "Lower Bound"), linewidth = 1, linetype = "dashed") +
+  geom_line(aes(y = effect_max, color = "Upper Bound"), linewidth = 1, linetype = "dotdash") +
+  geom_line(aes(y = effect_zero, color = "Baseline Reference"), linewidth = 1) +
+  geom_hline(yintercept = 0, linetype = "solid", alpha = 0.3) +
+  scale_color_manual(values = c("Lower Bound" = "blue", "Upper Bound" = "red", "Baseline Reference" = "black")) +
+  theme_minimal() +
+  labs(
+    title = "Bootstrapped Bounded Cohort Effects",
+    subtitle = "95% CIs for Fosse & Winship Bounding Approach",
+    x = "Birth Cohort",
+    y = "Cohort Effect (Log-Count)",
+    color = "Boundary"
+  ) +
+  theme(legend.position = "bottom")
+
+p_bounds_boot
+
+ggsave("Plots/cohort_bounds_bootstrapped.png", p_bounds_boot, width = 8, height = 5, dpi = 300)
+```
