@@ -82,20 +82,22 @@ $$p_l^*(s) = \hat{p}_l - s \cdot (P_l - P_{ref})$$
 
 where $C_{ref} = P_{ref} - A_{ref}$ is the reference year coordinates.
 
-**Bounding Constraints**: Instead of making arbitrary point-identifying equality constraints, we can establish rigorous mathematical bounds on the unknown parameter $s$ ($[s_{\min}, s_{\max}]$) by imposing three highly plausible, weak qualitative assumptions:
+**Bounding Constraints**: Instead of making arbitrary point-identifying equality constraints, we can establish rigorous mathematical bounds on the unknown parameter $s$ ($[s_{\min}, s_{\max}]$) by imposing two highly plausible, weak qualitative assumptions:
 1. **Age-Decline Assumption**: The physical capacity and likelihood of attending 0-8 cultural activities out of the home should not systematically increase in late-stage old age (between ages 50 and 80). Thus, $a^*(80) \le a^*(50)$. This implies a mathematical upper bound on the slope:
    $$s \le \frac{\hat{a}(50) - \hat{a}(80)}{30}$$
 2. **Period-Trend Assumption**: Given the well-documented secular decline in institutional arts attendance in the US during the late 20th century, the period trend between 1982 and 2012 must be negative or flat. Thus, $p^*(2012) \le p^*(1982)$. This places a lower bound on the slope:
    $$s \ge \frac{\hat{p}(2012) - \hat{p}(1982)}{30}$$
    Furthermore, we assume that the period effect does not decline by an impossibly catastrophic degree (more than a 1.5 shift in log-count over 30 years): $p^*(2012) \ge p^*(1982) - 1.5$, which yields a secondary upper bound restriction.
-3. **Cohort-Trend Assumption**: The overall secular trend across the century of birth cohorts (from 1890 to 1990) is generally negative, such that $c^*(1990) \le c^*(1890)$. This yields a tight third upper bound constraint on the slope $s$.
 
 **Results and Interpretation**: A common source of confusion in bounded APC analysis is interpreting the shapes of the curves. Because of the exact linear dependency between Age, Period, and Cohort ($Cohort = Period - Age$), APC models cannot identify the *linear slope* of the trend. The bounds reflect this by rotating the possible baseline line up and down. However, what the model *can* perfectly identify are the **non-linear deviations from that slope**.
 
 By calculating these bounds and plotting the family of possible cohort curves, we prove that under **every mathematically possible scenario** within these realistic constraints, the cohort effect exhibits a distinct, positive non-linear deviation—a structural "bulge" or "surge" relative to the secular trend—centered on the 1915-1955 generations. 
-With the inclusion of the linear negative cohort trend assumption, both the upper and lower bounds on the slope become strictly negative. Consequently, all mathematically possible cohort curves now show a distinct downward trajectory. Yet, the mid-century cohorts (1915–1955) clearly arrest and reverse this overall generational decline before it resumes for post-1970 cohorts. Thus, the generational imprint (the non-linear curvature) is perfectly identified, proving it is a physical, mathematical reality of the data, not an artifact of a specific linear constraint.
+For instance, the upper bound line appears at first glance to be a linearly increasing trend. However, if one draws a straight line through the cohort points on this upper bound, it is not perfectly straight. The mid-century cohorts (1915–1955) surge upward much faster than the baseline trend, representing a massive acceleration in cultural omnivorousness, before growth stagnates for post-1970 cohorts. Thus, the generational imprint (the non-linear curvature) is perfectly identified, proving it is a physical, mathematical reality of the data, not an artifact of a specific linear constraint.
 
 ---
+
+**Incorporating Sampling Variability via Bootstrapping (Supplemental)**:
+As emphasized by Rohrer (2025), traditional bounding isolates uncertainty stemming from the *identification problem*, but does not account for *sampling error*. To address this and implement modern validation checks, we utilized a custom bootstrapping procedure (resampling iterations of the full bounded model) to generate 95% confidence intervals around the upper and lower boundary lines. Due to the high computational intensity of refitting APC matrices across 72,000 observations, this specific validation is provided in a supplemental script (`rohrer_bootstrapping_validation.qmd`) rather than the main rendering pipeline.
 
 ### C. Generalized Additive Models (GAMs) & Lexis Surface Smooths
 

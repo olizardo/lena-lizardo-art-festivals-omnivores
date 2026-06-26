@@ -625,12 +625,8 @@ s_upper_age_o <- as.numeric((age_coefs_omni["50"] - age_coefs_omni["80"]) / 30)
 s_upper_period_o <- as.numeric((period_coefs_omni["2012"] - period_coefs_omni["1982"] + 1.5) / 30)
 s_lower_period_o <- as.numeric((period_coefs_omni["2012"] - period_coefs_omni["1982"]) / 30)
 
-# Add new assumption: Linear negative cohort trend between 1890 and 1990
-# This implies c*(1990) <= c*(1890), yielding another upper bound on s.
-s_upper_cohort_o <- as.numeric((cohort_coefs_omni["1890"] - cohort_coefs_omni["1990"]) / 100)
-
 # Determine valid bounds
-s_max_o <- min(s_upper_age_o, s_upper_period_o, s_upper_cohort_o)
+s_max_o <- min(s_upper_age_o, s_upper_period_o)
 s_min_o <- s_lower_period_o
 message("Computed Bounds on s: [", round(s_min_o, 4), ", ", round(s_max_o, 4), "]")
 
@@ -664,10 +660,10 @@ p_bounds_omni
 ggsave("Plots/cohort_bounds_omnivore.png", p_bounds_omni, width = 8, height = 5, dpi = 300)
 ```
 
-By incorporating the additional assumption of a **linear negative cohort trend** (i.e., that the overall generational effect between the earliest cohort in 1890 and the latest in 1990 has declined), the bounds on the unknown slope parameter $s$ become much tighter and exclusively negative. Because APC models cannot identify the true linear slope due to collinearity, the bounds rotate the overall baseline trend up and down. 
-As seen in the updated plot, under these tighter qualitative constraints, all mathematically possible cohort curves now show a distinct downward trajectory. Yet crucially, the non-linear structure remains perfectly stable and perfectly identified. Regardless of which slope is chosen within the bounds, the cohort effects for those born between 1915 and 1955 exhibit a massive positive deviation (a structural "bulge") relative to the baseline linear trend. The mid-century cohorts (1915-1955) clearly arrest and reverse the overall generational decline before it resumes for post-1970 generations, proving a distinctly elevated generational imprint.
+Across all mathematically plausible bounds for the slope parameter $s$, the non-linear structure of the cohort effect remains perfectly stable. Because APC models cannot identify the true linear slope due to collinearity, the bounds rotate the overall baseline trend up and down. However, the models *can* perfectly identify non-linear deviations from that slope. 
+As seen in the plot, the cohort effects for those born between 1915 and 1955 exhibit a massive positive deviation (a structural "bulge") relative to the linear trend. Even in the upper bound scenario—which appears at first glance to be a linearly increasing trend—if one traces a straight baseline through the points, it is clear the line is not perfectly straight. The mid-century cohorts (1915-1955) surge upward much faster than the baseline trend before growth stagnates for the post-1970 generations, proving a distinctly elevated generational imprint.
 
-### 2. Generalized Additive Models (GAMs) & Lexis Surfaces
+
 
 To rule out any bias introduced by rigid parametric specifications of age or cohort bins, we model the expected Omnivore Score non-parametrically using a Generalized Additive Model (GAM) with a bivariate tensor-product spline:
 $\log(\mu_i) = \beta_0 + te(\text{Age}_i, \text{Period}_i) + \boldsymbol{\delta} \mathbf{X}_{i}$

@@ -1,0 +1,189 @@
+---
+title: "Bootstrapped Bounding Analysis"
+format: html
+---
+
+This document isolates the computationally intensive bootstrapping validation for the Fosse & Winship Bounded APC Analysis, following Rohrer (2025).
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(lme4)
+library(boot)
+
+library(haven)
+df_raw <- read_dta("sppa1982-2012_stata.dta", col_select = c("year", "age", "gender", "education", "race", "jazz", "classical", "opera", "musical", "ballet", "artmuseum", "craft_fair", "park", "weight_normalized"))
+
+outcomes <- c("jazz", "classical", "opera", "musical", "ballet", "artmuseum", "craft_fair", "park")
+
+get_cohort_bins <- function(cohort_val, width, start_yr = 1885, end_yr = 1995) {
+  breaks <- seq(start_yr, end_yr, by = width)
+  bins <- cut(cohort_val, breaks = breaks, right = FALSE, labels = FALSE)
+  bin_labels <- breaks[bins]
+  if (width == 5) {
+    bin_labels[bin_labels == 1885] <- 1890
+  }
+  return(bin_labels)
+}
+
+df_clean <- df_raw |>
+  mutate(across(all_of(outcomes), ~ case_when(
+    . == 1 ~ 1,
+    . == 2 ~ 0,
+    TRUE ~ NA_real_
+  ))) |>
+  filter(!is.na(craft_fair)) |>
+  mutate(
+    woman = if_else(gender == 2, 1, 0),
+    college = if_else(education > 4, 1, 0),
+    white = if_else(race == 1, 1, 0),
+    black = if_else(race == 2, 1, 0),
+    agecat = cut(age, breaks = seq(15, 100, by = 5), right = FALSE, labels = FALSE),
+    cohort = year - age,
+    cohort5 = get_cohort_bins(cohort, 5),
+    omnivore_score = rowSums(across(all_of(outcomes)), na.rm = TRUE)
+  ) |>
+  filter(age >= 15 & age <= 95)
+
+# Get the initial df_bounds_omni 
+fit_apc_omni <- glm(
+  omnivore_score ~ as.factor(agecat) + as.factor(year) + as.factor(cohort5) + woman + college + white + black,
+  family = poisson(link = "log"), 
+  data = df_clean
+)
+coefs_omni <- coef(fit_apc_omni)
+
+cohort_years <- seq(1890, 1990, by = 5)
+cohort_coefs_omni <- c(0, coefs_omni[grep("as.factor\\(cohort5\\)", names(coefs_omni))])
+names(cohort_coefs_omni) <- cohort_years
+
+age_coefs_omni <- c(0, coefs_omni[grep("as.factor\\(agecat\\)", names(coefs_omni))])
+names(age_coefs_omni) <- seq(15, 95, by = 5)
+
+period_coefs_omni <- c(0, coefs_omni[grep("as.factor\\(year\\)", names(coefs_omni))])
+names(period_coefs_omni) <- c(1982, 1985, 1992, 2002, 2008, 2012)
+
+s_upper_age_o <- as.numeric((age_coefs_omni["50"] - age_coefs_omni["80"]) / 30)
+s_upper_period_o <- as.numeric((period_coefs_omni["2012"] - period_coefs_omni["1982"] + 1.5) / 30)
+s_lower_period_o <- as.numeric((period_coefs_omni["2012"] - period_coefs_omni["1982"]) / 30)
+
+s_max_o <- min(s_upper_age_o, s_upper_period_o)
+s_min_o <- s_lower_period_o
+
+df_bounds_omni <- tibble(
+  cohort = cohort_years,
+  effect_min = cohort_coefs_omni + s_min_o * (cohort - (1982 - 15)),
+  effect_zero = cohort_coefs_omni,
+  effect_max = cohort_coefs_omni + s_max_o * (cohort - (1982 - 15))
+)
+```
+
+### Incorporating Sampling Variability via Bootstrapping
+
+As noted by Rohrer (2025), the bounding procedure incorporates uncertainty regarding the age-period-cohort identification problem but does not inherently account for statistical sampling error. To generate confidence intervals around our bounded cohort effects and test whether the estimated bounds significantly differ from zero, we can bootstrap the entire bounding procedure.
+
+```{r bootstrap-bounds, cache=TRUE, message=FALSE, warning=FALSE}
+library(boot)
+
+# Define the bootstrapping function
+boot_bounds <- function(data, indices) {
+  d <- data[indices, ]
+  fit <- glm(
+    omnivore_score ~ as.factor(agecat) + as.factor(year) + as.factor(cohort5) + woman + college + white + black,
+    family = poisson(link = "log"), 
+    data = d
+  )
+  coefs <- coef(fit)
+  
+  # Cohort vector (extract existing, set missing to NA or 0)
+  c_years <- seq(1890, 1990, by = 5)
+  c_coefs <- rep(NA, length(c_years))
+  names(c_coefs) <- c_years
+  c_coefs["1890"] <- 0 # reference
+  for (cy in c_years[-1]) {
+    nm <- paste0("as.factor(cohort5)", cy)
+    if (nm %in% names(coefs)) c_coefs[as.character(cy)] <- coefs[nm]
+  }
+  
+  # Age vector
+  a_years <- seq(15, 95, by = 5)
+  a_cats <- 1:17
+  a_coefs <- rep(NA, length(a_years))
+  names(a_coefs) <- a_years
+  a_coefs["15"] <- 0 # reference
+  for (i in 2:17) {
+    nm <- paste0("as.factor(agecat)", i)
+    if (nm %in% names(coefs)) a_coefs[as.character(a_years[i])] <- coefs[nm]
+  }
+  
+  # Period vector
+  p_years <- c(1982, 1985, 1992, 2002, 2008, 2012)
+  p_coefs <- rep(NA, length(p_years))
+  names(p_coefs) <- p_years
+  p_coefs["1982"] <- 0 # reference
+  for (py in p_years[-1]) {
+    nm <- paste0("as.factor(year)", py)
+    if (nm %in% names(coefs)) p_coefs[as.character(py)] <- coefs[nm]
+  }
+  
+  A_ref <- 15
+  P_ref <- 1982
+  C_ref <- P_ref - A_ref
+  
+  s_upper_age <- as.numeric((a_coefs["50"] - a_coefs["80"]) / 30)
+  s_upper_period <- as.numeric((p_coefs["2012"] - p_coefs["1982"] + 1.5) / 30)
+  s_lower_period <- as.numeric((p_coefs["2012"] - p_coefs["1982"]) / 30)
+
+  
+  s_max <- min(s_upper_age, s_upper_period, na.rm=TRUE)
+  s_min <- s_lower_period
+  
+  eff_min <- c_coefs + s_min * (c_years - C_ref)
+  eff_max <- c_coefs + s_max * (c_years - C_ref)
+  
+  return(c(eff_min, eff_max))
+}
+
+# Run bootstrap (R=100 for computational efficiency, can be increased for final manuscript)
+set.seed(42)
+boot_results <- boot(data = df_clean, statistic = boot_bounds, R = 100)
+
+# Extract 95% CIs
+c_years <- seq(1890, 1990, by = 5)
+n_c <- length(c_years)
+
+ci_min_lower <- apply(boot_results$t[, 1:n_c], 2, quantile, probs = 0.025, na.rm=TRUE)
+ci_min_upper <- apply(boot_results$t[, 1:n_c], 2, quantile, probs = 0.975, na.rm=TRUE)
+
+ci_max_lower <- apply(boot_results$t[, (n_c+1):(2*n_c)], 2, quantile, probs = 0.025, na.rm=TRUE)
+ci_max_upper <- apply(boot_results$t[, (n_c+1):(2*n_c)], 2, quantile, probs = 0.975, na.rm=TRUE)
+
+df_bounds_boot <- df_bounds_omni |>
+  mutate(
+    min_ci_low = ci_min_lower,
+    min_ci_high = ci_min_upper,
+    max_ci_low = ci_max_lower,
+    max_ci_high = ci_max_upper
+  )
+
+p_bounds_boot <- ggplot(df_bounds_boot, aes(x = cohort)) +
+  geom_ribbon(aes(ymin = min_ci_low, ymax = min_ci_high), fill = "blue", alpha = 0.15) +
+  geom_ribbon(aes(ymin = max_ci_low, ymax = max_ci_high), fill = "red", alpha = 0.15) +
+  geom_line(aes(y = effect_min, color = "Lower Bound"), linewidth = 1, linetype = "dashed") +
+  geom_line(aes(y = effect_max, color = "Upper Bound"), linewidth = 1, linetype = "dotdash") +
+  geom_line(aes(y = effect_zero, color = "Baseline Reference"), linewidth = 1) +
+  geom_hline(yintercept = 0, linetype = "solid", alpha = 0.3) +
+  scale_color_manual(values = c("Lower Bound" = "blue", "Upper Bound" = "red", "Baseline Reference" = "black")) +
+  theme_minimal() +
+  labs(
+    title = "Bootstrapped Bounded Cohort Effects",
+    subtitle = "95% CIs for Fosse & Winship Bounding Approach",
+    x = "Birth Cohort",
+    y = "Cohort Effect (Log-Count)",
+    color = "Boundary"
+  ) +
+  theme(legend.position = "bottom")
+
+p_bounds_boot
+
+ggsave("Plots/cohort_bounds_bootstrapped.png", p_bounds_boot, width = 8, height = 5, dpi = 300)
+```
