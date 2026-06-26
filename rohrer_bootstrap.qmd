@@ -98,12 +98,16 @@ boot_bounds <- function(data, indices) {
   P_ref <- 1982
   C_ref <- P_ref - A_ref
   
-  s_upper_age <- as.numeric((a_coefs["50"] - a_coefs["80"]) / 30)
-  s_upper_period <- as.numeric((p_coefs["2012"] - p_coefs["1982"] + 1.5) / 30)
-  s_lower_period <- as.numeric((p_coefs["2012"] - p_coefs["1982"]) / 30)
-
-  s_max <- min(s_upper_age, s_upper_period, na.rm=TRUE)
-  s_min <- s_lower_period
+  # Replace old bounding calculation with new linear slope bounds
+  plotted_ages <- a_years[a_years <= 80]
+  fit_age_lin <- lm(a_coefs[as.character(plotted_ages)] ~ plotted_ages)
+  alpha_star <- coef(fit_age_lin)[2]
+  
+  fit_period_lin <- lm(p_coefs ~ p_years)
+  pi_star <- coef(fit_period_lin)[2]
+  
+  s_max <- -alpha_star
+  s_min <- pi_star
   
   eff_min <- c_coefs + s_min * (c_years - C_ref)
   eff_max <- c_coefs + s_max * (c_years - C_ref)
