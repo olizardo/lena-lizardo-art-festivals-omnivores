@@ -16,7 +16,7 @@ This Quarto document presents a modernized, reproducible data analysis pipeline 
 
 Specifically, this document:
 1. Re-processes the cumulative SPPA dataset in R, ensuring full reproducibility.
-2. Recreates the descriptive trends across Age, Period, and Cohort (Figures 1 and 2).
+2. Recreates the descriptive trends across Age, Period, and Cohort (@fig-bivariate-trends and @fig-cohort-trends-year).
 3. Fits **Orthogonal Estimator (OE)** and **Fosse & Winship Bounding Analysis** as the primary models to formally identify cohort effects without arbitrary parametric constraints.
 4. Applies **Generalized Additive Models (GAMs) on Lexis Surfaces** and **Rohrer's Bootstrapped Bounds** as robustness checks.
 5. Employs the **Age-Period-Cohort Interaction (APCI)** model to inspect intra-cohort life course dynamics.
@@ -27,7 +27,10 @@ Specifically, this document:
 
 We begin by loading the cumulative SPPA dataset `sppa1982-2012_stata.dta` and preparing the analytical variables.
 
-```{r setup, message=FALSE, warning=FALSE}
+```{r}
+#| label: setup
+#| message: false
+#| warning: false
 library(tidyverse)
 library(haven)
 library(lme4)
@@ -38,7 +41,9 @@ library(ggeffects)
 set.seed(3759)
 ```
 
-```{r data-load, cache=TRUE}
+```{r}
+#| label: data-load
+#| cache: true
 # Select columns to optimize memory usage
 cols_to_keep <- c(
   "persid", "year", "age", "gender", "education", "race", "hispanic",
@@ -60,7 +65,8 @@ Following the original Stata cleaning logic:
 - Cohort bins are constructed with varying windows (2, 4, 6, and 8 years) to facilitate robustness testing.
 - Controls are constructed: `woman` (gender == 2), `college` (education > 4, i.e. college graduate or higher), `white` (race == 1), and `black` (race == 2).
 
-```{r recoding}
+```{r}
+#| label: recoding
 # Define outcomes
 outcomes <- c("jazz", "classical", "opera", "musical", "ballet", "artmuseum", "craft_fair", "park")
 
@@ -129,13 +135,16 @@ df_clean |>
 
 ---
 
-## 3. Descriptive Plots (Translating Figures 1 & 2)
+## 3. Descriptive Plots (Translating @fig-bivariate-trends & @fig-cohort-trends-year)
 
-### Figure 1: Standardized Bivariate Trends by Age, Period, and Cohort
+### @fig-bivariate-trends: Standardized Bivariate Trends by Age, Period, and Cohort
 
 To see the raw trends across the three temporal dimensions, we calculate average cultural omnivore scores across Age Categories, Survey Years, and Birth Cohorts.
 
-```{r figure1-prep, message=FALSE, warning=FALSE}
+```{r}
+#| label: figure1-prep
+#| message: false
+#| warning: false
 # 1. Bivariate by Age Category
 age_trends <- df_clean |>
   filter(agecat <= 15) |>
@@ -154,7 +163,11 @@ cohort_trends <- df_clean |>
   summarise(Value = mean(omnivore_score, na.rm = TRUE))
 ```
 
-```{r figure1-plot, fig.width=12, fig.height=5}
+```{r}
+#| label: fig-bivariate-trends
+#| fig-cap: 'Standardized Bivariate Trends by Age, Period, and Cohort'
+#| fig-width: 12
+#| fig-height: 5
 p_age <- ggplot(age_trends, aes(x = agecat, y = Value)) +
   geom_line(linewidth = 0.8) +
   geom_point() +
@@ -186,11 +199,17 @@ p_fig1
 ggsave("Plots/bivariate_apc_trends.png", p_fig1, width = 12, height = 5, dpi = 300)
 ```
 
-### Figure 2: Bivariate Cohort Trends by Selected Survey Years
+### @fig-cohort-trends-year: Bivariate Cohort Trends by Selected Survey Years
 
 To check for stable generational cohorts, we plot the average Omnivore Score across cohorts, stratified by three key survey years (1982, 2002, 2012).
 
-```{r figure2-plot, fig.width=8, fig.height=5, warning=FALSE, message=FALSE}
+```{r}
+#| label: fig-cohort-trends-year
+#| fig-cap: 'Bivariate Cohort Trends by Selected Survey Years'
+#| fig-width: 8
+#| fig-height: 5
+#| warning: false
+#| message: false
 df_fig2 <- df_clean |>
   filter(year %in% c(1982, 2002, 2012)) |>
   filter(cohort5 >= 1900 & cohort5 <= 1990) |>
@@ -216,19 +235,21 @@ ggsave("Plots/cohort_trends_by_survey_year.png", p_fig2, width = 8, height = 5, 
 
 ## 4. Main Analysis: Linearized Design Matrix, Bounding, and Orthogonal Estimator
 
-In this section, we implement the formal framework for APC analysis outlined by Fosse & Winship (2019, Section 4.3):
+In this section, we implement the formal step-by-step framework for modern APC analysis outlined by Fosse & Winship (2019, Section 4.3). We faithfully follow their recommended sequence (omitting Step 5 on mechanism-based models):
 
-1. **Linearized Design Matrix:** We extract the identifiable linear combinations ($\theta_1, \theta_2$) invariant to model constraints.
-2. **Linear Bounding & 2D-APC Graph:** We apply qualitative theoretical constraints to bound the overall linear trends and visualize the solution space.
-3. **Identified Quantities:** We plot the mathematically verified non-linear deviations.
-4. **Bounded Cohort Curves:** We construct the final bounded cohort effect curves.
-5. **Orthogonal Estimator (OE):** We extract mechanical point estimates to corroborate the bounds.
+1. **Linearized Design Matrix:** We extract the linear slopes and non-linear residuals from a reference model.
+2. **Identified Quantities:** We report the perfectly identifiable linear combinations ($\theta_1, \theta_2$) and visualize the pure non-linear deviations.
+3. **2D-APC Graph:** We map the canonical solution line to visualize the geometric constraints.
+4. **Bounding Analyses:** We apply explicit qualitative constraints to bound the linear trends, and reconstruct the final cohort effect curves.
+
+Finally, we supplement this workflow by computing the Orthogonal Estimator (OE) to verify that a robust mechanical point estimate falls within our theoretical bounds.
 
 ### Step 1: Linearized Design Matrix
 
 Because of the exact linear dependency between Age, Period, and Cohort ($C = P - A$), classical APC models are unidentified. Fosse & Winship recommend running a standard categorical model and then regressing the extracted coefficients on the categorical values (e.g., using OLS) to extract the pure non-linear deviations (which are perfectly identified) and the underlying linear combinations $\theta_1$ and $\theta_2$.
 
-```{r linearized-design-matrix}
+```{r}
+#| label: linearized-design-matrix
 # Fit standard categorical APC GLM reference model on Omnivore Score using Poisson
 fit_apc_omni <- glm(
   omnivore_score ~ as.factor(agecat) + as.factor(year) + as.factor(cohort5) + woman + college + white + black,
@@ -277,7 +298,44 @@ message("Identified Combinations:\ntheta1 (alpha + pi) = ", round(theta1, 4), "\
 ```
 
 
-### Step 2: Linear Bounding Assumptions and the 2D-APC Graph
+### Step 2: Identified Quantities (Non-Linear Deviations)
+
+To see what the model is identifying without any arbitrary constraints, we can plot the pure non-linear deviations ($\tilde{\alpha}, \tilde{\pi}, \tilde{\gamma}$):
+
+```{r}
+#| label: fig-nonlinear-deviations
+#| fig-cap: 'Perfectly Identified Non-Linear Deviations'
+#| fig-width: 10
+#| fig-height: 4
+df_nl_age <- data.frame(time = plotted_ages, nl_effect = age_nl, var = "Age")
+df_nl_period <- data.frame(time = period_years, nl_effect = period_nl, var = "Period")
+df_nl_cohort <- data.frame(time = plotted_cohorts, nl_effect = cohort_nl, var = "Cohort")
+
+df_nl_all <- bind_rows(df_nl_age, df_nl_period, df_nl_cohort)
+
+p_nl <- ggplot(df_nl_all, aes(x = time, y = nl_effect)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_line(linewidth = 1, color = "steelblue") +
+  geom_point(size = 2, color = "steelblue") +
+  facet_wrap(~var, scales = "free_x") +
+  theme_minimal() +
+  labs(
+    title = "Perfectly Identified Non-Linear Deviations",
+    x = "Time Scale",
+    y = "Non-Linear Deviation (Log-Count)"
+  )
+p_nl
+ggsave("Plots/nonlinear_deviations.png", p_nl, width = 10, height = 4, dpi = 300)
+```
+
+The non-linear deviations plot provides perfectly identified insights into the structural dynamics of cultural participation, entirely independent of the ambiguous linear trends:
+
+- **Age (Life-Course Dynamics):** The age deviation exhibits an inverted-U shape peaking around age 70. Participation drops sharply initially in early adulthood (age 15 to 30), likely as people are focused on child-rearing and early career establishment. It then climbs steadily until late adulthood (age 70), as individuals accumulate the cultural capital, wealth, and free time to engage broadly in the arts. Participation begins to decline sharply again in old age (after age 75), reflecting emerging physical mobility constraints or health factors (extreme high ages are excluded from the plot due to noisy small cell counts).
+- **Period (Historical Shocks):** The period deviations are relatively flat and small in magnitude compared to age and cohort. This indicates that specific year-to-year historical shocks (such as short-term economic fluctuations in the 1990s or 2000s) have only minor, transient impacts on overall cultural omnivorousness.
+- **Cohort (Generational Imprint):** The cohort deviation reveals a massive, mathematically undeniable structural "bulge" for generations born between roughly 1920 and 1960. Regardless of what the overall baseline linear trend is, these mid-century cohorts exhibit structurally elevated levels of cultural participation compared to both previous and subsequent generations. The sharp drop-off for post-1960 cohorts demonstrates that "omnivorousness" is not a continuous, compounding historical increase, but rather a unique generational imprint tied to the mid-century experience.
+
+
+### Step 3: 2D-APC Graph and Linear Bounding
 
 We can represent any candidate set of linear trends ($\alpha, \pi, \gamma$) as an additive transformation of the unidentifiable slope estimates ($\alpha^*, \pi^*, \gamma^*$) from our reference model and a single scalar $s$:
 $$\alpha = \alpha^* + s$$
@@ -288,7 +346,8 @@ We impose explicit qualitative constraints directly on the two primary temporal 
 1. **Age-Decline Assumption**: The overall linear effect of aging is non-positive due to mobility constraints and life-course changes: $\alpha \le 0$. This implies $s \le -\alpha^*$.
 2. **Period-Trend Assumption**: The historical linear trend of cultural attendance over this period is non-positive, matching the widely documented secular decline in the arts: $\pi \le 0$. This implies $s \ge \pi^*$.
 
-```{r bounds-calculation}
+```{r}
+#| label: bounds-calculation
 A_ref <- 15
 P_ref <- 1982
 C_ref <- P_ref - A_ref
@@ -317,7 +376,10 @@ $$\theta_2 = (\pi^* - s) + (\gamma^* + s) = \pi^* + \gamma^*$$
 
 Any alternative candidate set of slope estimates under a different identifying constraint must satisfy these exact invariant linear equations. 
 
-```{r fosse-winship-2d-apc-plot, warning=FALSE}
+```{r}
+#| label: fig-2d-apc
+#| fig-cap: '2D-APC Graph: Canonical Solution Line'
+#| warning: false
 # Calculate bounds on slopes based on s_min_o and s_max_o
 alpha_min <- alpha_star + s_min_o
 alpha_max <- alpha_star + s_max_o
@@ -394,40 +456,7 @@ We can interpret the bounded (shaded) region on this solution line as follows:
 - **Period ($\pi$):** The shaded region falls entirely to the left of the vertical line where the period slope is zero. This guarantees a secular baseline decline (or flatness) in general cultural attendance over the 1982-2012 window, aligning with our qualitative assumptions.
 - **Cohort ($\gamma$):** The secondary y-axis shows that the entire bounding region sits *above* zero. Because $\theta_2 = \pi + \gamma \approx +0.0007$ in our data, setting $\pi \le 0$ mathematically forces the cohort trend to be slightly positive ($\gamma \ge +0.0007$). This indicates that the baseline linear trend for cohorts must actually be slightly positive!
 
-### Step 3: Perfectly Identified Non-Linear Deviations
-
-To see what the model is identifying without any arbitrary constraints, we can plot the pure non-linear deviations ($\tilde{\alpha}, \tilde{\pi}, \tilde{\gamma}$):
-
-```{r plot-nonlinear-quantities, fig.width=10, fig.height=4}
-df_nl_age <- data.frame(time = plotted_ages, nl_effect = age_nl, var = "Age")
-df_nl_period <- data.frame(time = period_years, nl_effect = period_nl, var = "Period")
-df_nl_cohort <- data.frame(time = plotted_cohorts, nl_effect = cohort_nl, var = "Cohort")
-
-df_nl_all <- bind_rows(df_nl_age, df_nl_period, df_nl_cohort)
-
-p_nl <- ggplot(df_nl_all, aes(x = time, y = nl_effect)) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
-  geom_line(linewidth = 1, color = "steelblue") +
-  geom_point(size = 2, color = "steelblue") +
-  facet_wrap(~var, scales = "free_x") +
-  theme_minimal() +
-  labs(
-    title = "Perfectly Identified Non-Linear Deviations",
-    x = "Time Scale",
-    y = "Non-Linear Deviation (Log-Count)"
-  )
-p_nl
-ggsave("Plots/nonlinear_deviations.png", p_nl, width = 10, height = 4, dpi = 300)
-```
-
-The non-linear deviations plot provides perfectly identified insights into the structural dynamics of cultural participation, entirely independent of the ambiguous linear trends:
-
-- **Age (Life-Course Dynamics):** The age deviation exhibits an inverted-U shape peaking around age 70. Participation drops sharply initially in early adulthood (age 15 to 30), likely as people are focused on child-rearing and early career establishment. It then climbs steadily until late adulthood (age 70), as individuals accumulate the cultural capital, wealth, and free time to engage broadly in the arts. Participation begins to decline sharply again in old age (after age 75), reflecting emerging physical mobility constraints or health factors (extreme high ages are excluded from the plot due to noisy small cell counts).
-- **Period (Historical Shocks):** The period deviations are relatively flat and small in magnitude compared to age and cohort. This indicates that specific year-to-year historical shocks (such as short-term economic fluctuations in the 1990s or 2000s) have only minor, transient impacts on overall cultural omnivorousness.
-- **Cohort (Generational Imprint):** The cohort deviation reveals a massive, mathematically undeniable structural "bulge" for generations born between roughly 1920 and 1960. Regardless of what the overall baseline linear trend is, these mid-century cohorts exhibit structurally elevated levels of cultural participation compared to both previous and subsequent generations. The sharp drop-off for post-1960 cohorts demonstrates that "omnivorousness" is not a continuous, compounding historical increase, but rather a unique generational imprint tied to the mid-century experience.
-
-
-### Step 4: Bounded Cohort Effect Curves
+### Step 4: Bounding Analyses (Reconstructing Cohort Curves)
 
 While the underlying linear trends are unidentified without assumptions, the non-linear deviations (the structural "bumps" and "dips" shown in Step 3) are perfectly identified directly from the data. To reconstruct the most plausible overall cohort effect curves, we simply take the perfectly identified non-linear cohort deviations ($\tilde{\gamma}$) and superimpose the bounded linear cohort slopes we derived in Step 2. 
 
@@ -435,7 +464,11 @@ As detailed previously, we mathematically restricted the age linear trend to be 
 
 By applying the minimum and maximum values of $s$ from that interval to our reference coefficients, we rotate the baseline linear angle of the cohort curve up or down. Crucially, because the non-linear structure is exactly identified, the geometric "shape" of the curve remains perfectly identical across all bounded models—only the baseline tilt changes.
 
-```{r plot-bounded-cohort-curves, fig.width=10, fig.height=4}
+```{r}
+#| label: fig-bounded-cohort-curves
+#| fig-cap: 'Bounded Age-Period-Cohort Effects for Omnivore Score'
+#| fig-width: 10
+#| fig-height: 4
 # Create bounded APC curves (Fosse & Winship Figure 8 style)
 df_bounds_age <- tibble(
   time = age_vals,
@@ -481,7 +514,9 @@ p_bounds_omni
 ggsave("Plots/cohort_bounds_omnivore.png", p_bounds_omni, width = 10, height = 4, dpi = 300)
 ```
 
-**Interpretation of Bounded Curves:**
+::: {.callout-note}
+## Interpretation of Bounded Curves
+
 The bounded APC effects plot visualizes the limits of the "true" trends based on our theoretical constraints, following the presentation style of Fosse & Winship (2019, Figure 8). The solid lines represent the extreme upper and lower boundaries derived from the assumptions (Age slope $\le 0$ and Period slope $\le 0$), while the dotted line represents the midpoint reference (where $s=0$).
 
 Across all three timescales, the non-linear structure is exactly identified and perfectly preserved—only the baseline tilt of the curves is rotated up or down between the bounds. 
@@ -489,11 +524,29 @@ Across all three timescales, the non-linear structure is exactly identified and 
 - The **Period** bounds show a flat or mildly negative historical trend.
 - The **Cohort** bounds clearly demonstrate a massive, mathematically undeniable generational peak for cohorts born between 1920 and 1960. Because this "omnivorous generation" peak is driven by a perfectly identified non-linear deviation, it cannot be "rotated away" by any mathematically valid linear assumption.
 
+:::
+
+::: {.callout-important}
+## Note on the Width of the Bounds
+
+You may notice that the bounds for the SPPA data appear relatively wide compared to the illustrative examples in Fosse & Winship (2019). There are three main methodological reasons for this:
+
+1. **Conservative Assumptions:** We applied very weak, conservative qualitative bounds (simply assuming Age and Period slopes $\le 0$). Stronger theoretical constraints (such as strict monotonicity or a mechanism-based model) would narrow the interval, but at the cost of stronger, potentially debatable assumptions.
+2. **Empirical Parameters:** The width of the interval on the slope shift parameter $s$ is dictated entirely by the perfectly identified combination $\theta_1$. A larger combined Age and Period linear trend ($\theta_1$) inherently creates a wider baseline gap.
+3. **Compounding Uncertainty:** The bounding parameter $s$ represents a *slope*. Because the SPPA birth cohorts span 90 years, the uncertainty bounds compound linearly as you move further away from the reference cohort, creating a "trumpet" or fan shape at the historical extremes.
+
+Crucially, these wide bounds serve as a rhetorical strength for the analysis: even within this extremely wide, conservative envelope of uncertainty, the non-linear "bulge" for the 1920–1960 cohorts survives perfectly intact. It demonstrates that the existence of the "omnivorous generation" is mathematically undeniable, regardless of which edge of the wide bounds one assumes.
+
+:::
+
 ### Orthogonal Estimator (OE)
 
 Following Fosse and Winship, we can also extract a mechanical point estimate using the Orthogonal Estimator (OE). The OE is unique among Moore-Penrose generalized inverse estimators because its constraint is perfectly robust to the number of categories and the direction of the non-linearities, always reducing to the canonical constraint $\alpha - \pi + \gamma = 0$.
 
-```{r oe-omnivore-score, warning=FALSE}
+```{r}
+#| label: fig-oe-omnivore
+#| fig-cap: 'Cohort Effects: Bounded Analysis vs. Orthogonal Estimator (OE)'
+#| warning: false
 # Calculate the slope shift scalar (s) that satisfies the OE constraint
 s_oe <- as.numeric((-alpha_star + pi_star - gamma_star) / 3)
 
@@ -531,7 +584,10 @@ Because the OE falls inside these bounds, its mechanical point estimate represen
 
 We can repeat this same process specifically for `craft_fair` using a logistic regression to ensure the generational peak is not just an artifact of the aggregate count outcome.
 
-```{r oe-craft-fair, warning=FALSE}
+```{r}
+#| label: fig-oe-craft-fair
+#| fig-cap: 'Cohort Effects for Craft Fair Attendance'
+#| warning: false
 fit_apc_cf <- glm(
   craft_fair ~ as.factor(agecat) + as.factor(year) + as.factor(cohort5) + woman + college + white + black,
   family = binomial(link = "logit"), 
@@ -602,7 +658,9 @@ To rule out any bias introduced by rigid parametric specifications of age or coh
 $\log(\mu_i) = \beta_0 + te(\text{Age}_i, \text{Period}_i) + \boldsymbol{\delta} \mathbf{X}_{i}$
 This models the full continuous Age-by-Period surface. Since birth cohorts represent diagonals on this surface ($Cohort = Period - Age$), we can visually inspect if the high-participation "ridge" lies along the diagonal bands of the 1930–1950 generations.
 
-```{r gam-lexis-surface}
+```{r}
+#| label: fig-gam-lexis
+#| fig-cap: 'Lexis Surface of Omnivore Score'
 library(mgcv)
 
 # Fit GAM with tensor-product spline of age and period for Omnivore Score using Poisson
